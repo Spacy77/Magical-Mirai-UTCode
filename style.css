@@ -1,21 +1,38 @@
 body {
+    background: white;
+    color: white;
     font-family: sans-serif;
     text-align: center;
     padding: 2rem;
 }
 
 #lyric {
-    font-size: 4rem;
+    font-size: 10rem;
     min-height: 5rem;
     text-align: right;
 }
 
 #media {
-    margin: 1rem auto;
+    position: fixed;
+    bottom: 1px;
+    left: 20px;
+    width: 100%;
 }
 
 button {
     margin: 0.25rem;
     padding: 0.5rem 1rem;
     font-size: 1rem;
+}
+
+#buttons {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    padding: 1rem 0;
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    background: rgba(255, 255, 255, 0.9);
 }
