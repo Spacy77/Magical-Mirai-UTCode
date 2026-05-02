@@ -1,21 +1,281 @@
 <!DOCTYPE html>
 <html lang="fr">
-  <head>
+<head>
     <meta charset="UTF-8" />
-    <title>TextAlive lyric app</title>
+    <title>TextAlive Magical Mirai</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-  </head>
-  <body>
-    <div id="lyric"></div>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
     <div id="media"></div>
-    <div>
-      <button id="play">Play</button>
-      <button id="pause">Pause</button>
-      <button id="stop">Stop</button>
-    </div>
 
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
     <script src="https://unpkg.com/textalive-app-api/dist/index.js"></script>
-    <script src="script.js"></script>
-  </body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
+
+    <script>
+        const gameSettings = {
+            api: {
+                token: "1O5BTRwWsXT6TfAP",
+                songUrl: "https://piapro.jp/t/PNpQ/20251209170719"
+            },
+            colors: {
+                primary: 0x0000ff,
+                primaryHover: 0x0000aa,
+                textMain: "#000000",
+                textLight: "#ffffff",
+                textPrimary: "#0000ff"
+            },
+            fonts: {
+                main: '"Noto Sans JP", sans-serif',
+                ui: 'sans-serif'
+            },
+            spinner: {
+                radius: 50,
+                thickness: 8,
+                rotationSpeed: 0.1
+            },
+            button: {
+                width: 250,
+                height: 80,
+                fontSize: "40px"
+            },
+            catcher: {
+                xPos: 120,
+                width: 40,
+                height: 160,
+                speed: 18,
+                marginY: 80
+            },
+            lyrics: {
+                fallTimeMs: 1600,
+                startXOffset: 100,
+                marginY: 100,
+                fontSize: "80px",
+                destroyOverflowRatio: 0.2
+            }
+        };
+
+        const { Player } = TextAliveApp;
+        let isTextAliveReady = false;
+
+        class LoadScene extends Phaser.Scene {
+            constructor() {
+                super("LoadScene");
+            }
+
+            create() {
+                const cx = this.scale.width / 2;
+                const cy = this.scale.height / 2;
+
+                this.spinner = this.add.graphics({ x: cx, y: cy });
+                this.spinner.lineStyle(gameSettings.spinner.thickness, gameSettings.colors.primary, 1);
+                this.spinner.beginPath();
+                this.spinner.arc(0, 0, gameSettings.spinner.radius, 0, Math.PI * 1.5, false);
+                this.spinner.strokePath();
+            }
+
+            update() {
+                this.spinner.rotation += gameSettings.spinner.rotationSpeed;
+                
+                if (isTextAliveReady) {
+                    this.scene.start("TitleScene");
+                }
+            }
+        }
+
+        class TitleScene extends Phaser.Scene {
+            constructor() {
+                super("TitleScene");
+            }
+
+            create() {
+                const cx = this.scale.width / 2;
+                const cy = this.scale.height / 2;
+
+                const playButtonBg = this.add.rectangle(
+                    cx, 
+                    cy, 
+                    gameSettings.button.width, 
+                    gameSettings.button.height, 
+                    gameSettings.colors.primary
+                );
+                playButtonBg.setInteractive({ useHandCursor: true });
+
+                this.add.text(cx, cy, "PLAY", {
+                    fontFamily: gameSettings.fonts.ui,
+                    fontSize: gameSettings.button.fontSize,
+                    color: gameSettings.colors.textLight,
+                    fontStyle: "bold"
+                }).setOrigin(0.5);
+
+                playButtonBg.on('pointerover', () => {
+                    playButtonBg.fillColor = gameSettings.colors.primaryHover;
+                });
+
+                playButtonBg.on('pointerout', () => {
+                    playButtonBg.fillColor = gameSettings.colors.primary;
+                });
+
+                playButtonBg.on('pointerdown', () => {
+                    taPlayer.requestPlay();
+                    this.scene.start("GameScene");
+                });
+            }
+        }
+
+        class GameScene extends Phaser.Scene {
+            constructor() {
+                super("GameScene");
+            }
+
+            create() {
+                this.fallTime = gameSettings.lyrics.fallTimeMs;
+                this.catcherX = gameSettings.catcher.xPos;
+                this.destroyThreshold = gameSettings.lyrics.destroyOverflowRatio;
+                
+                this.catcher = this.add.rectangle(
+                    this.catcherX, 
+                    this.scale.height / 2, 
+                    gameSettings.catcher.width, 
+                    gameSettings.catcher.height, 
+                    gameSettings.colors.primary
+                );
+                this.physics.add.existing(this.catcher);
+                this.catcher.body.setImmovable(true);
+
+                this.charGroup = this.physics.add.group();
+                this.physics.add.overlap(this.catcher, this.charGroup, this.catchChar, null, this);
+
+                this.cursors = this.input.keyboard.createCursorKeys();
+                this.activeChars = [];
+                this.pendingChars = [];
+                this.wordYMap = new Map();
+
+                if (taPlayer && taPlayer.video) {
+                    this.loadLyrics(taPlayer.video.firstChar);
+                }
+            }
+
+            update() {
+                const w = this.scale.width;
+                const h = this.scale.height;
+
+                if (this.cursors.up.isDown) this.catcher.y -= gameSettings.catcher.speed;
+                if (this.cursors.down.isDown) this.catcher.y += gameSettings.catcher.speed;
+                
+                this.catcher.y = Phaser.Math.Clamp(
+                    this.catcher.y, 
+                    gameSettings.catcher.marginY, 
+                    h - gameSettings.catcher.marginY
+                );
+
+                if (!taPlayer || !taPlayer.isPlaying) return;
+
+                const time = taPlayer.timer.position;
+                const startX = w + gameSettings.lyrics.startXOffset;
+
+                while (this.pendingChars.length > 0 && this.pendingChars[0].startTime - this.fallTime <= time) {
+                    const charData = this.pendingChars.shift();
+                    
+                    if (time > charData.startTime + (this.fallTime * this.destroyThreshold)) {
+                        continue;
+                    }
+                    
+                    let yPos;
+                    if (this.wordYMap.has(charData.parent)) {
+                        yPos = this.wordYMap.get(charData.parent);
+                    } else {
+                        yPos = Phaser.Math.Between(
+                            gameSettings.lyrics.marginY, 
+                            h - gameSettings.lyrics.marginY
+                        );
+                        this.wordYMap.set(charData.parent, yPos);
+                    }
+                    
+                    const txt = this.add.text(startX, yPos, charData.text, { 
+                        fontFamily: gameSettings.fonts.main,
+                        fontSize: gameSettings.lyrics.fontSize, 
+                        color: gameSettings.colors.textMain, 
+                        fontStyle: "bold" 
+                    }).setOrigin(0.5);
+                    
+                    this.physics.add.existing(txt);
+                    this.charGroup.add(txt);
+                    this.activeChars.push({ obj: txt, startTime: charData.startTime });
+                }
+
+                for (let i = this.activeChars.length - 1; i >= 0; i--) {
+                    const item = this.activeChars[i];
+                    const progress = (time - (item.startTime - this.fallTime)) / this.fallTime;
+                    
+                    item.obj.x = startX - (startX - this.catcherX) * progress;
+
+                    if (progress > 1 + this.destroyThreshold) {
+                        item.obj.destroy();
+                        this.activeChars.splice(i, 1);
+                    }
+                }
+            }
+
+            catchChar(catcher, charObj) {
+                charObj.destroy();
+                const idx = this.activeChars.findIndex(l => l.obj === charObj);
+                if (idx > -1) this.activeChars.splice(idx, 1);
+            }
+
+            loadLyrics(firstChar) {
+                this.pendingChars = [];
+                this.wordYMap.clear();
+                let c = firstChar;
+                while (c) {
+                    if (c.text.trim().length > 0) {
+                        this.pendingChars.push(c);
+                    }
+                    c = c.next;
+                }
+            }
+        }
+
+        const config = {
+            type: Phaser.AUTO,
+            parent: "game-container",
+            width: window.innerWidth,
+            height: window.innerHeight,
+            transparent: true,
+            physics: { default: "arcade" },
+            scene: [LoadScene, TitleScene, GameScene],
+            scale: {
+                mode: Phaser.Scale.RESIZE,
+                autoCenter: Phaser.Scale.CENTER_BOTH
+            }
+        };
+
+        const game = new Phaser.Game(config);
+
+        const taPlayer = new Player({
+            app: { token: gameSettings.api.token },
+            mediaElement: document.querySelector("#media"),
+        });
+
+        taPlayer.addListener({
+            onTimerReady() {
+                isTextAliveReady = true;
+            }
+        });
+
+        taPlayer.createFromSongUrl(gameSettings.api.songUrl);
+    </script>
+</body>
 </html>
