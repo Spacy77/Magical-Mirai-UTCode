@@ -26,44 +26,89 @@
 
     <script>
         const gameSettings = {
+            // API settings for TextAlive player integration
             api: {
+                // TextAlive app token
                 token: "1O5BTRwWsXT6TfAP",
+                // Song URL passed to TextAlive to load the track
                 songUrl: "https://piapro.jp/t/PNpQ/20251209170719"
             },
+
+            // Color palette used by UI and game objects
             colors: {
+                // Primary accent color (hex number for Phaser shapes)
                 primary: 0x0000ff,
+                // Hover state color for interactive elements
                 primaryHover: 0x0000aa,
+                // Main text color (CSS hex string)
                 textMain: "#000000",
+                // Light text color used on dark backgrounds
                 textLight: "#ffffff",
+                // Secondary text / accent color (CSS hex)
                 textPrimary: "#0000ff"
             },
+
+            // Font configuration for text rendering
             fonts: {
+                // Main game font for lyrics and large text
                 main: '"Noto Sans JP", sans-serif',
+                // UI font for buttons, small labels
                 ui: 'sans-serif'
             },
+
+            // Loading spinner visuals
             spinner: {
+                // Radius of spinner arc in pixels
                 radius: 50,
+                // Stroke thickness of the spinner arc
                 thickness: 8,
+                // Rotation speed applied each frame (radians per update)
                 rotationSpeed: 0.1
             },
+
+            // Play button dimensions and typography
             button: {
+                // Width of the PLAY button in pixels
                 width: 250,
+                // Height of the PLAY button in pixels
                 height: 80,
+                // Font size used for button label (CSS value)
                 fontSize: "40px"
             },
+
+            // Catcher (player) configuration
             catcher: {
+                // X position of the catcher from the left edge (pixels)
                 xPos: 120,
+                // Catcher visual width in pixels
                 width: 40,
+                // Catcher visual height in pixels
                 height: 160,
+                // Movement speed in pixels per update when pressing keys
                 speed: 18,
+                // Vertical margin to clamp catcher movement (pixels)
                 marginY: 80
             },
+
+            // Lyrics / falling character behaviour
             lyrics: {
+                // Time (ms) it takes for a lyric character to fall across the screen
                 fallTimeMs: 1600,
+                // Horizontal offset from right edge where characters start
                 startXOffset: 100,
+                // Vertical margin to avoid placing lyrics too close to edges
                 marginY: 100,
+                // Font size used for lyric characters (CSS value)
                 fontSize: "80px",
+                // Fraction of fall distance past which characters are destroyed
                 destroyOverflowRatio: 0.2
+            },
+
+            // The sliding Y position pointer for spawning characters, with its own movement constraints
+            charSpawnYPointer: {
+                // Maximum speed at which the spawn Y pointer can move (ratio of screen height per update)
+                maxSpeed: 0.05,
+                jerk: 0.001 // Maximum random acceleration applied to the spawn Y pointer each update (pixels per update^2)
             }
         };
 
@@ -163,63 +208,125 @@
                 this.pendingChars = [];
                 this.wordYMap = new Map();
 
+                this.charSpawnYPointer = Phaser.Math.Between(
+                    gameSettings.lyrics.marginY,
+                    this.scale.width - gameSettings.lyrics.marginY
+                ); 
+                this.charSpawnYPointerAccelleration = Phaser.Math.Between(
+                    - gameSettings.charSpawnYPointer.maxSpeed / 2,
+                    gameSettings.charSpawnYPointer.maxSpeed / 2
+                ); 
+
                 if (taPlayer && taPlayer.video) {
                     this.loadLyrics(taPlayer.video.firstChar);
                 }
+                
+
+                // debug
+                this.spawnYPointerDebugRect = this.add.rectangle(
+                    this.scene.width - 10, 
+                    this.charSpawnYPointer, 
+                    10, 
+                    10, 
+                    gameSettings.colors.primary,
+                );
+                // TODO : if uncommented, this will break the collision detection for catching chars. Find out why.
+                /*
+                this.physics.add.existing(this.spawnYPointerDebugRect);
+                this.spawnYPointerDebugRect.body.setImmovable(true);
+                */
             }
 
             update() {
                 const w = this.scale.width;
                 const h = this.scale.height;
 
-                if (this.cursors.up.isDown) this.catcher.y -= gameSettings.catcher.speed;
-                if (this.cursors.down.isDown) this.catcher.y += gameSettings.catcher.speed;
-                
-                this.catcher.y = Phaser.Math.Clamp(
-                    this.catcher.y, 
-                    gameSettings.catcher.marginY, 
-                    h - gameSettings.catcher.marginY
-                );
+                this.handleInput(h);
 
                 if (!taPlayer || !taPlayer.isPlaying) return;
 
                 const time = taPlayer.timer.position;
                 const startX = w + gameSettings.lyrics.startXOffset;
+                this.updateYPointer(h);
+                this.spawnPendingChars(time, startX, w, h);
+                this.updateActiveChars(time, startX);
+            }
 
+            handleInput(sceneHeight) {
+                if (this.cursors.up.isDown) this.catcher.y -= gameSettings.catcher.speed;
+                if (this.cursors.down.isDown) this.catcher.y += gameSettings.catcher.speed;
+
+                this.catcher.y = Phaser.Math.Clamp(
+                    this.catcher.y,
+                    gameSettings.catcher.marginY,
+                    sceneHeight - gameSettings.catcher.marginY
+                );
+            }
+
+            updateYPointer(sceneHeight) {
+                // Move the spawn Y pointer with its current accelleration. Change direction if it hits the vertical margins
+                this.charSpawnYPointer += sceneHeight * this.charSpawnYPointerAccelleration;
+                if (this.charSpawnYPointer < gameSettings.lyrics.marginY || this.charSpawnYPointer > sceneHeight - gameSettings.lyrics.marginY) {
+                    this.charSpawnYPointerAccelleration *= -1;
+                    this.charSpawnYPointer = Phaser.Math.Clamp(
+                        this.charSpawnYPointer,
+                        gameSettings.lyrics.marginY,
+                        sceneHeight - gameSettings.lyrics.marginY
+                    );
+                }
+
+                // Randomly adjust the accelleration
+                this.charSpawnYPointerAccelleration += Phaser.Math.Between(
+                    - gameSettings.charSpawnYPointer.jerk,
+                    gameSettings.charSpawnYPointer.jerk
+                );
+
+
+                // Clamp the accelleration to the maximum speed
+                this.charSpawnYPointerAccelleration = Phaser.Math.Clamp(
+                    this.charSpawnYPointerAccelleration,
+                    - gameSettings.charSpawnYPointer.maxSpeed,
+                    gameSettings.charSpawnYPointer.maxSpeed
+                );
+
+                // Update debug spawn Y pointer position
+                this.spawnYPointerDebugRect.y = this.charSpawnYPointer;
+            }
+
+            spawnPendingChars(time, startX, sceneWidth, sceneHeight) {
                 while (this.pendingChars.length > 0 && this.pendingChars[0].startTime - this.fallTime <= time) {
                     const charData = this.pendingChars.shift();
-                    
+
                     if (time > charData.startTime + (this.fallTime * this.destroyThreshold)) {
                         continue;
                     }
-                    
+
                     let yPos;
                     if (this.wordYMap.has(charData.parent)) {
                         yPos = this.wordYMap.get(charData.parent);
                     } else {
-                        yPos = Phaser.Math.Between(
-                            gameSettings.lyrics.marginY, 
-                            h - gameSettings.lyrics.marginY
-                        );
+                        yPos = this.charSpawnYPointer; 
                         this.wordYMap.set(charData.parent, yPos);
                     }
                     
                     const txt = this.add.text(startX, yPos, charData.text, { 
                         fontFamily: gameSettings.fonts.main,
-                        fontSize: gameSettings.lyrics.fontSize, 
-                        color: gameSettings.colors.textMain, 
-                        fontStyle: "bold" 
+                        fontSize: gameSettings.lyrics.fontSize,
+                        color: gameSettings.colors.textMain,
+                        fontStyle: "bold"
                     }).setOrigin(0.5);
-                    
+
                     this.physics.add.existing(txt);
                     this.charGroup.add(txt);
                     this.activeChars.push({ obj: txt, startTime: charData.startTime });
                 }
+            }
 
+            updateActiveChars(time, startX) {
                 for (let i = this.activeChars.length - 1; i >= 0; i--) {
                     const item = this.activeChars[i];
                     const progress = (time - (item.startTime - this.fallTime)) / this.fallTime;
-                    
+
                     item.obj.x = startX - (startX - this.catcherX) * progress;
 
                     if (progress > 1 + this.destroyThreshold) {
@@ -238,12 +345,12 @@
             loadLyrics(firstChar) {
                 this.pendingChars = [];
                 this.wordYMap.clear();
-                let c = firstChar;
-                while (c) {
-                    if (c.text.trim().length > 0) {
-                        this.pendingChars.push(c);
+                let char = firstChar;
+                while (char) {
+                    if (char.text.trim().length > 0) {
+                        this.pendingChars.push(char);
                     }
-                    c = c.next;
+                    char = char.next;
                 }
             }
         }
