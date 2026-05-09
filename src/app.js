@@ -6,7 +6,7 @@
 const gameSettings = {
     api: {
         token: "1O5BTRwWsXT6TfAP",
-        songUrl: "https://piapro.jp/t/PNpQ/20251209170719"
+        songUrl: "https://piapro.jp/t/hZ35/20240130103028"
     },
     colors: {
         primary: 0x0000ff,
@@ -23,7 +23,7 @@ const gameSettings = {
     button: { width: 250, height: 80, fontSize: "40px" },
     catcher: { xPos: 120, width: 40, height: 160, speed: 8, marginY: 80 },
     lyrics: {
-        fallTimeMs: 2400,
+        fallTimeMs: 3000,
         startXOffset: 100,
         marginY: 100,
         fontSize: "80px",
@@ -31,7 +31,7 @@ const gameSettings = {
         minDelayNewYPos: 500,
         minDelayLongChar: 500
     },
-    charSpawnYPointer: { maxSpeed: 0.05, jerk: 0.001 }
+    charSpawnYPointer: { maxSpeed: 0.00, jerk: 0.001 }
 };
 
 const { Player } = TextAliveApp;
@@ -90,28 +90,24 @@ class GameScene extends Phaser.Scene {
         this.cursors = this.input.keyboard.createCursorKeys();
         this.activeChars = [];
         this.pendingChars = [];
-        this.wordYMap = new Map();
 
         // Initialize spawn pointer: picks a Y within margins and a small random velocity
         this.charSpawnYPointer = Phaser.Math.Between(gameSettings.lyrics.marginY, this.scale.width - gameSettings.lyrics.marginY);
-        this.charSpawnYPointerAccelleration = Phaser.Math.Between(- gameSettings.charSpawnYPointer.maxSpeed / 2, gameSettings.charSpawnYPointer.maxSpeed / 2);
+        this.charSpawnYPointerAccelleration = Phaser.Math.FloatBetween(- gameSettings.charSpawnYPointer.maxSpeed / 2, gameSettings.charSpawnYPointer.maxSpeed / 2);
 
         if (taPlayer && taPlayer.video) this.loadLyrics(taPlayer.video.firstChar);
 
-        this.lastSpawnedChar = null;
-        this.fontSizeInt = parseInt(gameSettings.lyrics.fontSize);
-        this.minDelayNewYPos = gameSettings.lyrics.minDelayNewYPos;
-        this.lastSpawnedCharY = this.scale.height / 2;
-        this.minDelayLongChar = gameSettings.lyrics.minDelayLongChar;
-
-        // Debug visual for spawn pointer (non-essential)
-        this.spawnYPointerDebugRect = this.add.rectangle(this.scene.width - 10, this.charSpawnYPointer, 10, 10, gameSettings.colors.primary);
-        // NOTE: enabling physics bodies on this debug rect seems to interfere with collision detection.
-        // The original code had a commented-out block; keep that comment here for future debugging.
-        /*
-        this.physics.add.existing(this.spawnYPointerDebugRect);
-        this.spawnYPointerDebugRect.body.setImmovable(true);
-        */
+        // display song timer for debugging
+        this.timeText = this.add.text(10, 10, "", {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "24px",
+            color: gameSettings.colors.textMain
+        }).setOrigin(0, 0);
+        taPlayer.addListener({ onTimerReady: () => { this.timeText.setText("0:00.000"); },
+            onTimeUpdate: () => {
+                this.timeText.setText(taPlayer.timer.position.toString());
+            }
+        });
     }
 
     update() {
@@ -142,87 +138,40 @@ class GameScene extends Phaser.Scene {
         }
 
         // Small random jitter applied to acceleration, then clamp to max speed.
-        this.charSpawnYPointerAccelleration += Phaser.Math.Between(- gameSettings.charSpawnYPointer.jerk, gameSettings.charSpawnYPointer.jerk);
+        this.charSpawnYPointerAccelleration += Phaser.Math.FloatBetween(- gameSettings.charSpawnYPointer.jerk, gameSettings.charSpawnYPointer.jerk);
         this.charSpawnYPointerAccelleration = Phaser.Math.Clamp(this.charSpawnYPointerAccelleration, - gameSettings.charSpawnYPointer.maxSpeed, gameSettings.charSpawnYPointer.maxSpeed);
-
-        // Keep debug visual aligned
-        this.spawnYPointerDebugRect.y = this.charSpawnYPointer;
     }
 
     spawnPendingChars(time, startX, sceneWidth, sceneHeight) {
         // Push characters whose start time has arrived from pendingChars -> activeChars
-        while (this.pendingChars.length > 0 && this.pendingChars[0].startTime - this.fallTime <= time) {
-            const charData = this.pendingChars.shift();
+        while (this.pendingChars.length > 0) {
+            const nextChar = this.pendingChars[0];
+            if (time >= nextChar.startTime - this.fallTime) {
+                const charObj = this.add.text(startX, this.charSpawnYPointer, nextChar.text, {
+                    fontFamily: gameSettings.fonts.main,
+                    fontSize: gameSettings.lyrics.fontSize,
+                    color: gameSettings.colors.textMain
+                }).setOrigin(0.5);
 
-            let deltaTime = this.lastSpawnedChar ? (charData.startTime - this.lastSpawnedChar.startTime) : 9999;
-            if (time > charData.startTime + (this.fallTime * this.destroyThreshold)) continue;
-
-            // Decide Y position for this character. If the word already has a Y, reuse it.
-            let yPos;
-            if (this.wordYMap.has(charData.parent)) {
-                yPos = this.wordYMap.get(charData.parent);
-            } else if (deltaTime < this.minDelayNewYPos) {
-                // Place near the last spawned char to keep words visually grouped
-                yPos = Math.random() < 0.5 ? this.lastSpawnedCharY - this.fontSizeInt : this.lastSpawnedCharY + this.fontSizeInt;
-                yPos = Phaser.Math.Clamp(yPos, this.fontSizeInt / 2, sceneHeight - this.fontSizeInt / 2);
-                this.wordYMap.set(charData.parent, yPos);
+                console.log(`Spawning char '${nextChar.text}' at time ${time}ms (scheduled for ${nextChar.startTime}ms), falltime ${this.fallTime}ms, startX ${startX}, spawnY ${this.charSpawnYPointer}`);
+                this.charGroup.add(charObj);
+                this.activeChars.push({ char: nextChar, obj: charObj });
+                this.pendingChars.shift();
             } else {
-                // Use the moving pointer as a spawn baseline
-                yPos = this.charSpawnYPointer;
-                this.wordYMap.set(charData.parent, yPos);
+                break;
             }
-
-            if (!this.wordYMap.has(charData.parent)) this.lastSpawnedCharY = yPos;
-
-            const txt = this.add.text(0, 0, charData.text, { fontFamily: gameSettings.fonts.main, fontSize: gameSettings.lyrics.fontSize, color: gameSettings.colors.textMain, fontStyle: "bold" }).setOrigin(0.5);
-
-            const duration = charData.endTime - charData.startTime;
-            let strip = null;
-
-            // Long-duration characters get a translucent strip graphic that moves with them.
-            if (duration > this.minDelayLongChar) {
-                txt.updateText();
-                strip = this.add.graphics();
-                strip.fillStyle(0x0000ff, 0.3);
-                strip.fillRect(-txt.width / 2 - 10, -txt.height / 2, txt.width + duration, txt.height);
-
-                // The tween detaches the strip from the container and animates it separately.
-                // This section is somewhat fiddly: it moves the strip, then destroys it when done.
-                this.tweens.add({
-                    targets: strip,
-                    alpha: 0,
-                    duration: this.fallTime,
-                    delay: this.fallTime + duration,
-                    onStart: () => {
-                        const worldX = container.x;
-                        const worldY = container.y;
-                        container.remove(strip);
-                        strip.setPosition(worldX, worldY);
-                        this.add.existing(strip);
-                    },
-                    onUpdate: () => { strip.x -= 5; },
-                    onComplete: () => strip.destroy()
-                });
-            }
-
-            // Pack text and optional strip into a container so we can move them together and add physics.
-            const children = strip ? [strip, txt] : [txt];
-            const container = this.add.container(startX, yPos, children);
-            this.physics.add.existing(container);
-            this.charGroup.add(container);
-
-            this.activeChars.push({ obj: container, startTime: charData.startTime });
-            this.lastSpawnedChar = charData;
         }
     }
 
     updateActiveChars(time, startX) {
         for (let i = this.activeChars.length - 1; i >= 0; i--) {
             const item = this.activeChars[i];
-            const progress = (time - (item.startTime - this.fallTime)) / this.fallTime;
-            item.obj.x = startX - (startX - this.catcherX) * progress;
+            const char = item.char;
+            const obj = item.obj;
+            const progress = (time - (char.startTime - this.fallTime)) / this.fallTime; // 0 = start of fall, 1 = reaches catcher, >1 = past catcher 
+            obj.x = startX - (startX - this.catcherX) * progress;
             if (progress > 1 + this.destroyThreshold) {
-                item.obj.destroy();
+                obj.destroy();
                 this.activeChars.splice(i, 1);
             }
         }
@@ -236,12 +185,14 @@ class GameScene extends Phaser.Scene {
 
     loadLyrics(firstChar) {
         this.pendingChars = [];
-        this.wordYMap.clear();
         let char = firstChar;
         while (char) {
             if (char.text.trim().length > 0) this.pendingChars.push(char);
             char = char.next;
         }
+
+        // sort pending chars by start time just in case
+        this.pendingChars.sort((a, b) => a.startTime - b.startTime);
     }
 }
 
