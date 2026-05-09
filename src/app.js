@@ -6,7 +6,7 @@
 const gameSettings = {
     api: {
         token: "1O5BTRwWsXT6TfAP",
-        songUrl: "https://piapro.jp/t/hZ35/20240130103028"
+        songUrl: "https://piapro.jp/t/B3yJ/20251215061727"
     },
     colors: {
         primary: 0x0000ff,
@@ -31,7 +31,7 @@ const gameSettings = {
         minDelayNewYPos: 500,
         minDelayLongChar: 500
     },
-    charSpawnYPointer: { maxSpeed: 0.00, jerk: 0.001 }
+    charSpawnYPointer: { maxSpeed: 0.005, jerk: 0.0005 }
 };
 
 const { Player } = TextAliveApp;
