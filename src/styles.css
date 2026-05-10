@@ -1,0 +1,30 @@
+/* Basic reset and full-viewport layout */
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: #f0f0f0;
+    font-family: "Noto Sans JP", sans-serif;
+}
+
+/* Container where Phaser mounts the canvas */
+#game-container {
+    width: 100%;
+    height: 100%;
+}
+
+/* Hidden media element used by TextAlive to control audio/video */
+#media {
+    display: none;
+}
+
+/* Small utility classes */
+.visually-hidden {
+    position: absolute !important;
+    width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); border: 0;
+}
+
+/* Add or override more styles here as needed */
