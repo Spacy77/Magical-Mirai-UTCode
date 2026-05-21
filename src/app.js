@@ -21,15 +21,16 @@ const gameSettings = {
     },
     spinner: { radius: 50, thickness: 8, rotationSpeed: 0.1 },
     button: { width: 250, height: 80, fontSize: "40px" },
-    catcher: { xPos: 120, width: 40, height: 160, speed: 8, marginY: 80 },
+    catcher: { xPos: 120, width: 40, height: 300, speed: 1, marginY: 80 }, // speed is in screen ratio
     lyrics: {
         fallTimeMs: 1000,
+        fallTimeMsMultiplier: 1,
         startXOffset: 100,
         marginY: 100,
         fontSize: "120px",
         destroyOverflowRatio: 0.2,
         minDelayNewYPos: 500,
-        minDelayLongChar: 500,
+        minDelayLongChar: 500
     },
     backgroundLyrics: {
         fontSize: "500px",
@@ -47,7 +48,7 @@ const gameSettings = {
         colors: [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff],
         alpha: { min: 0.1, max: 0.6 }
     },
-    charSpawnYPointer: { maxSpeed: 0.005, jerk: 0.0005 },
+    charSpawnYPointer: { speed: 1},
     minDelayLongChar: 400
 };
 
@@ -93,11 +94,13 @@ class TitleScene extends Phaser.Scene {
 class GameScene extends Phaser.Scene {
     constructor() { super("GameScene"); }
     create() {
-        this.fallTime = gameSettings.lyrics.fallTimeMs;
+        this.fallTimeMultiplier = gameSettings.lyrics.fallTimeMsMultiplier; // this is the only way to change fall time (this will sync other speeds)
+        this.fallTime = gameSettings.lyrics.fallTimeMs * this.fallTimeMultiplier;
         this.catcherX = gameSettings.catcher.xPos;
         this.destroyThreshold = gameSettings.lyrics.destroyOverflowRatio;
 
         this.catcher = this.add.rectangle(this.catcherX, this.scale.height / 2, gameSettings.catcher.width, gameSettings.catcher.height, gameSettings.colors.primary);
+        this.catcherDir = 1;
         this.physics.add.existing(this.catcher);
         this.catcher.body.setImmovable(true);
         this.catcherCurrentSpeed = gameSettings.catcher.speed;
@@ -105,7 +108,9 @@ class GameScene extends Phaser.Scene {
         this.charGroup = this.physics.add.group();
         this.physics.add.overlap(this.catcher, this.charGroup, this.catchChar, null, this);
 
-        this.cursors = this.input.keyboard.createCursorKeys();
+        this.cursors = this.input.keyboard.on('keydown-SPACE', () => {
+            this.catcherDir *= -1;
+        }, this);
         this.activeChars = [];
         this.pendingChars = [];
 
@@ -121,7 +126,7 @@ class GameScene extends Phaser.Scene {
 
         // Initialize spawn pointer: picks a Y within margins and a small random velocity
         this.charSpawnYPointer = Phaser.Math.Between(gameSettings.lyrics.marginY, this.scale.width - gameSettings.lyrics.marginY);
-        this.charSpawnYPointerAccelleration = Phaser.Math.FloatBetween(- gameSettings.charSpawnYPointer.maxSpeed / 2, gameSettings.charSpawnYPointer.maxSpeed / 2);
+        this.charSpawnYPointerSpeed = gameSettings.charSpawnYPointer.speed;
 
         if (taPlayer && taPlayer.video) this.loadLyrics(taPlayer.video.firstChar);
 
@@ -164,37 +169,33 @@ class GameScene extends Phaser.Scene {
     }
 
     update(time, delta) {
+        delta = delta / 1000; // convert to seconds
         const w = this.scale.width;
         const h = this.scale.height;
-        this.handleInput(h);
+        this.updateCatcher(h, delta);
         if (!taPlayer || !taPlayer.isPlaying) return;
         const songTime = taPlayer.timer.position;
         const startX = w + gameSettings.lyrics.startXOffset;
-        this.updateYPointer(h);
+        this.updateYPointer(h, delta);
         this.spawnPendingChars(songTime, startX, w, h);
         this.updateActiveChars(songTime, startX);
         this.destroyStrips(delta);
         this.updateBGChar();
     }
 
-    handleInput(sceneHeight) {
-        if (this.cursors.up.isDown) this.catcher.y -= this.catcherCurrentSpeed;
-        if (this.cursors.down.isDown) this.catcher.y += this.catcherCurrentSpeed;
+    updateCatcher(sceneHeight, delta) {
+        
+        this.catcherCurrentSpeed = sceneHeight * gameSettings.catcher.speed * this.fallTimeMultiplier * delta;
+        this.catcher.y += this.catcherDir * this.catcherCurrentSpeed;
         this.catcher.y = Phaser.Math.Clamp(this.catcher.y, gameSettings.catcher.marginY, sceneHeight - gameSettings.catcher.marginY);
     }
 
-    updateYPointer(sceneHeight) {
-        // Move pointer by current acceleration scaled by scene height.
-        // Reverse when hitting margins and clamp the value.
-        this.charSpawnYPointer += sceneHeight * this.charSpawnYPointerAccelleration;
+    updateYPointer(sceneHeight, delta) {
+        this.charSpawnYPointer += sceneHeight * this.charSpawnYPointerSpeed * this.fallTimeMultiplier * delta;
         if (this.charSpawnYPointer < gameSettings.lyrics.marginY || this.charSpawnYPointer > sceneHeight - gameSettings.lyrics.marginY) {
-            this.charSpawnYPointerAccelleration *= -1;
+            this.charSpawnYPointerSpeed *= -1;
             this.charSpawnYPointer = Phaser.Math.Clamp(this.charSpawnYPointer, gameSettings.lyrics.marginY, sceneHeight - gameSettings.lyrics.marginY);
         }
-
-        // Small random jitter applied to acceleration, then clamp to max speed.
-        this.charSpawnYPointerAccelleration += Phaser.Math.FloatBetween(- gameSettings.charSpawnYPointer.jerk, gameSettings.charSpawnYPointer.jerk);
-        this.charSpawnYPointerAccelleration = Phaser.Math.Clamp(this.charSpawnYPointerAccelleration, - gameSettings.charSpawnYPointer.maxSpeed, gameSettings.charSpawnYPointer.maxSpeed);
     }
 
     spawnStrip(startX, yPos, length, height){
@@ -224,7 +225,11 @@ class GameScene extends Phaser.Scene {
         while (this.pendingChars.length > 0) {
             const nextChar = this.pendingChars[0];
             const yPos = this.charSpawnYPointer;
+
             if (time >= nextChar.startTime - this.fallTime) {
+
+                this.charSpawnYPointerSpeed *= -1; // change direction of spawn pointer to create better movement
+
                 const charObj = this.add.text(startX, this.charSpawnYPointer, nextChar.text, {
                     fontFamily: gameSettings.fonts.main,
                     fontSize: gameSettings.lyrics.fontSize,
@@ -244,6 +249,7 @@ class GameScene extends Phaser.Scene {
     }
 
     destroyStrips(delta){
+        delta = delta * 1000; // convert to ms
         // Lower progressively the size of each strip
         for (let i = this.dyingStrips.length - 1; i >= 0; i--){
             const item = this.dyingStrips[i];
