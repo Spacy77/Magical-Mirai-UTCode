@@ -21,7 +21,7 @@ const gameSettings = {
     },
     spinner: { radius: 50, thickness: 8, rotationSpeed: 0.1 },
     button: { width: 250, height: 80, fontSize: "40px" },
-    catcher: { xPos: 120, width: 40, height: 300, speed: 1, marginY: 80 }, // speed is in screen ratio
+    catcher: { xPos: 120, width: 40, height: 300, maxSpeed: 1, responsiveness : 5.0, marginY: 80 }, // speed is in screen ratio, every thing needs to be used with Delta in SECONDS
     lyrics: {
         fallTimeMs: 1000,
         fallTimeMsMultiplier: 1,
@@ -44,11 +44,11 @@ const gameSettings = {
         speed: { min: 200, max: 400 },
         lifespan: { min: 300, max: 600 },
         quantity: 10,
-        scale: {start: 0.2, end: 2 },
+        scale: { start: 0.2, end: 2 },
         colors: [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff],
         alpha: { min: 0.1, max: 0.6 }
     },
-    charSpawnYPointer: { speed: 1},
+    charSpawnYPointer: { speed: 1 }, // in screen ratio
     minDelayLongChar: 400
 };
 
@@ -103,7 +103,8 @@ class GameScene extends Phaser.Scene {
         this.catcherDir = 1;
         this.physics.add.existing(this.catcher);
         this.catcher.body.setImmovable(true);
-        this.catcherCurrentSpeed = gameSettings.catcher.speed;
+        this.catcherCurrentMaxSpeed = gameSettings.catcher.maxSpeed;
+        this.catcherVelocity = 0;
 
         this.charGroup = this.physics.add.group();
         this.physics.add.overlap(this.catcher, this.charGroup, this.catchChar, null, this);
@@ -125,8 +126,9 @@ class GameScene extends Phaser.Scene {
         this.bgCharColorIndex = 0;
 
         // Initialize spawn pointer: picks a Y within margins and a small random velocity
-        this.charSpawnYPointer = Phaser.Math.Between(gameSettings.lyrics.marginY, this.scale.width - gameSettings.lyrics.marginY);
-        this.charSpawnYPointerSpeed = gameSettings.charSpawnYPointer.speed;
+        this.charSpawnYPointer = Phaser.Math.Between(gameSettings.lyrics.marginY, this.scale.height - gameSettings.lyrics.marginY);
+        this.charSpawnYPointerDir = Math.random() < 0.5 ? 1 : -1;
+        this.charSpawnYPointerVelocity = 0;
 
         if (taPlayer && taPlayer.video) this.loadLyrics(taPlayer.video.firstChar);
 
@@ -136,7 +138,8 @@ class GameScene extends Phaser.Scene {
             fontSize: "24px",
             color: gameSettings.colors.textMain
         }).setOrigin(0, 0);
-        taPlayer.addListener({ onTimerReady: () => { this.timeText.setText("0:00.000"); },
+        taPlayer.addListener({
+            onTimerReady: () => { this.timeText.setText("0:00.000"); },
             onTimeUpdate: () => {
                 this.timeText.setText(taPlayer.timer.position.toString());
             }
@@ -184,27 +187,67 @@ class GameScene extends Phaser.Scene {
     }
 
     updateCatcher(sceneHeight, delta) {
-        
-        this.catcherCurrentSpeed = sceneHeight * gameSettings.catcher.speed * this.fallTimeMultiplier * delta;
-        this.catcher.y += this.catcherDir * this.catcherCurrentSpeed;
-        this.catcher.y = Phaser.Math.Clamp(this.catcher.y, gameSettings.catcher.marginY, sceneHeight - gameSettings.catcher.marginY);
-    }
+        const targetSpeed =
+            this.catcherDir *
+            sceneHeight *
+            gameSettings.catcher.maxSpeed;
 
-    updateYPointer(sceneHeight, delta) {
-        this.charSpawnYPointer += sceneHeight * this.charSpawnYPointerSpeed * this.fallTimeMultiplier * delta;
-        if (this.charSpawnYPointer < gameSettings.lyrics.marginY || this.charSpawnYPointer > sceneHeight - gameSettings.lyrics.marginY) {
-            this.charSpawnYPointerSpeed *= -1;
-            this.charSpawnYPointer = Phaser.Math.Clamp(this.charSpawnYPointer, gameSettings.lyrics.marginY, sceneHeight - gameSettings.lyrics.marginY);
+        const t = 1.0 - Math.exp(-gameSettings.catcher.responsiveness * delta);
+
+        this.catcherVelocity = Phaser.Math.Linear(
+            this.catcherVelocity,
+            targetSpeed,
+            t
+        );
+
+        this.catcher.y += this.catcherVelocity * delta;
+
+        // bounds
+        const minY = gameSettings.catcher.marginY;
+        const maxY = sceneHeight - gameSettings.catcher.marginY;
+
+        if (this.catcher.y < minY) {
+            this.catcher.y = minY;
+            this.catcherVelocity = Math.max(0, this.catcherVelocity);
+        }
+
+        if (this.catcher.y > maxY) {
+            this.catcher.y = maxY;
+            this.catcherVelocity = Math.min(0, this.catcherVelocity);
         }
     }
 
-    spawnStrip(startX, yPos, length, height){
-        if (length < this.minDelayLongChar){
+    updateYPointer(sceneHeight, delta) {
+        // Smoothly move the Y pointer like the catcher
+        const targetSpeed = this.charSpawnYPointerDir * sceneHeight * gameSettings.charSpawnYPointer.speed;
+        const t = 1.0 - Math.exp(-5.0 * delta); // responsiveness for Y pointer
+        this.charSpawnYPointerVelocity = Phaser.Math.Linear(
+            this.charSpawnYPointerVelocity,
+            targetSpeed,
+            t
+        );
+        this.charSpawnYPointer += this.charSpawnYPointerVelocity * delta;
+
+        // Clamp to bounds
+        const minY = gameSettings.lyrics.marginY;
+        const maxY = sceneHeight - gameSettings.lyrics.marginY;
+        if (this.charSpawnYPointer < minY) {
+            this.charSpawnYPointer = minY;
+            this.charSpawnYPointerVelocity = Math.max(0, this.charSpawnYPointerVelocity);
+        }
+        if (this.charSpawnYPointer > maxY) {
+            this.charSpawnYPointer = maxY;
+            this.charSpawnYPointerVelocity = Math.min(0, this.charSpawnYPointerVelocity);
+        }
+    }
+
+    spawnStrip(startX, yPos, length, height) {
+        if (length < this.minDelayLongChar) {
             return null;
         }
 
         let strip = null;
-                    
+
         strip = this.add.rectangle(
             startX,
             yPos,
@@ -227,8 +270,8 @@ class GameScene extends Phaser.Scene {
             const yPos = this.charSpawnYPointer;
 
             if (time >= nextChar.startTime - this.fallTime) {
-
-                this.charSpawnYPointerSpeed *= -1; // change direction of spawn pointer to create better movement
+                // Reverse direction every time a char is spawned
+                this.charSpawnYPointerDir *= -1;
 
                 const charObj = this.add.text(startX, this.charSpawnYPointer, nextChar.text, {
                     fontFamily: gameSettings.fonts.main,
@@ -236,9 +279,9 @@ class GameScene extends Phaser.Scene {
                     color: gameSettings.colors.textMain
                 }).setOrigin(0.5);
 
-                console.log(`Spawning char '${nextChar.text}' at time ${time}ms (scheduled for ${nextChar.startTime}ms), falltime ${this.fallTime}ms, startX ${startX}, spawnY ${this.charSpawnYPointer}`);
-                const charStripRef = this.spawnStrip(startX + this.charSize/2, yPos, nextChar.endTime - nextChar.startTime - this.charSize, this.charSize/5);
-                
+                // console.log(`Spawning char '${nextChar.text}' at time ${time}ms (scheduled for ${nextChar.startTime}ms), falltime ${this.fallTime}ms, startX ${startX}, spawnY ${this.charSpawnYPointer}`);
+                const charStripRef = this.spawnStrip(startX + this.charSize / 2, yPos, nextChar.endTime - nextChar.startTime - this.charSize, this.charSize / 5);
+
                 this.charGroup.add(charObj);
                 this.activeChars.push({ char: nextChar, obj: charObj, strip: charStripRef });
                 this.pendingChars.shift();
@@ -248,10 +291,10 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    destroyStrips(delta){
+    destroyStrips(delta) {
         delta = delta * 1000; // convert to ms
         // Lower progressively the size of each strip
-        for (let i = this.dyingStrips.length - 1; i >= 0; i--){
+        for (let i = this.dyingStrips.length - 1; i >= 0; i--) {
             const item = this.dyingStrips[i];
 
             item.progress += delta / item.stripDuration;
@@ -263,7 +306,7 @@ class GameScene extends Phaser.Scene {
                 item.strip.destroy();
                 item.obj.destroy();
                 this.dyingStrips.splice(i, 1);
-                this.catcherCurrentSpeed = gameSettings.catcher.speed;
+                this.catcherCurrentMaxSpeed = gameSettings.catcher.maxSpeed;
             }
         }
     }
@@ -276,14 +319,14 @@ class GameScene extends Phaser.Scene {
             const strip = item.strip;
             const progress = (time - (char.startTime - this.fallTime)) / this.fallTime; // 0 = start of fall, 1 = reaches catcher, >1 = past catcher 
             obj.x = startX - (startX - this.catcherX) * progress;
-            if (strip != null){
-                strip.x = startX - (startX - this.catcherX) * progress + this.charSize/2;
+            if (strip != null) {
+                strip.x = startX - (startX - this.catcherX) * progress + this.charSize / 2;
             }
             if (progress > 1 + this.destroyThreshold) {
-                if (strip == null){
+                if (strip == null) {
                     obj.destroy();
                 }
-                else{
+                else {
                     const stripDuration = (strip.width / this.fallDistance) * this.fallTime;
                     this.dyingStrips.push({ strip: strip, maxWidth: strip.width, progress: 0, obj: obj, stripDuration: stripDuration });
                 }
@@ -291,7 +334,7 @@ class GameScene extends Phaser.Scene {
             }
         }
     }
-    
+
     catchChar(catcher, charObj) {
         this.catchParticles.emitParticleAt(this.catcher.x, this.catcher.y, 20);
 
@@ -299,15 +342,15 @@ class GameScene extends Phaser.Scene {
         if (idx > -1) {
             const char = this.activeChars[idx];
             this.activeChars.splice(idx, 1);
-            if (char.strip == null){
+            if (char.strip == null) {
                 charObj.destroy();
             }
-            else{
+            else {
                 // Handle the strip if there is one
                 const strip = char.strip;
                 const stripDuration = (strip.width / this.fallDistance) * this.fallTime;
                 this.dyingStrips.push({ strip: strip, maxWidth: strip.width, progress: 0, obj: charObj, stripDuration: stripDuration });
-                this.catcherCurrentSpeed = 0.5;
+                this.catcherCurrentMaxSpeed = 0.5;
             }
 
             // Update background character text
@@ -323,27 +366,27 @@ class GameScene extends Phaser.Scene {
             this.activeBGChar.setColor(color);
             this.activeBGChar.setFontSize(gameSettings.backgroundLyrics.fontSize);
 
-            window.navigator.vibrate(charDuration);
+            //window.navigator.vibrate(charDuration); TODO : fix
         }
     }
 
-    updateBGChar(){
-        if (!this.activeBGChar){
+    updateBGChar() {
+        if (!this.activeBGChar) {
             return;
         }
 
         const animTime = gameSettings.backgroundLyrics.maxDurationBGAnim;
         const position = taPlayer.timer.position;
 
-        if (position >= this.bgCharEndTime){
-            if (this.activeBGChar.alpha > 0){
-                this.activeBGChar.setAlpha(this.activeBGChar.alpha - 1/this.maxDurationBGEffect);
+        if (position >= this.bgCharEndTime) {
+            if (this.activeBGChar.alpha > 0) {
+                this.activeBGChar.setAlpha(this.activeBGChar.alpha - 1 / this.maxDurationBGEffect);
             }
-            else{
+            else {
                 this.activeBGChar.setText(null);
             }
         }
-        else if (position <= this.bgCharStartTime + animTime){
+        else if (position <= this.bgCharStartTime + animTime) {
             const currentSize = parseInt(this.activeBGChar.style.fontSize);
             this.activeBGChar.setFontSize(`${currentSize + gameSettings.backgroundLyrics.sizeChangeCoeff}px`);
         }
