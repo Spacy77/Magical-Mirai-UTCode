@@ -13,7 +13,8 @@ const gameSettings = {
         primaryHover: 0x0000aa,
         textMain: "#000000",
         textLight: "#ffffff",
-        textPrimary: "#0000ff"
+        textPrimary: "#0000ff",
+        glow : 0x00ffff,
     },
     fonts: {
         main: '"Noto Sans JP", sans-serif',
@@ -53,6 +54,8 @@ const gameSettings = {
     minDelayLongChar: 400,
 
     spawnGlowDuration: 50,
+
+    glow: { outerStrength: 10, innerStrength: 5, knockout: false },
 
     wave: {
         beatDuration: 500,
@@ -180,7 +183,7 @@ class ActiveChar {
         this.strip = this.createStrip(stripLength, stripHeight);
         this.glowDuration = glowDuration;
         this.glowRemaining = glowOnSpawn ? glowDuration : 0;
-        this.glowObj = glowOnSpawn ? this.createGlowObject() : null;
+        this.glowEffect = glowOnSpawn ? this.createGlowEffect() : null;
     }
 
     createStrip(stripLength, stripHeight) {
@@ -202,17 +205,9 @@ class ActiveChar {
         return strip;
     }
 
-    createGlowObject() {
-        const glowObj = this.scene.add.text(this.obj.x, this.obj.y, this.char.text, {
-            fontFamily: gameSettings.fonts.main,
-            fontSize: gameSettings.lyrics.fontSize,
-            color: "#ffffff"
-        }).setOrigin(0.5);
-
-        glowObj.setAlpha(0.45);
-        glowObj.setBlendMode(Phaser.BlendModes.ADD);
-        glowObj.setDepth(this.obj.depth - 1);
-        return glowObj;
+    createGlowEffect() {
+        this.glowEffect = this.obj.preFX.addGlow(gameSettings.colors.glow, gameSettings.glow.outerStrength, gameSettings.glow.innerStrength, gameSettings.glow.knockout);
+        return this.glowEffect;
     }
 
     update(time, startX, catcherX, fallTime, delta, destroyThreshold, fallDistance, charSize, dyingStrips) {
@@ -231,17 +226,15 @@ class ActiveChar {
     }
 
     updateGlow(delta) {
-        if (this.glowObj == null) {
+        if (this.glowEffect == null) {
             return;
         }
-
-        this.glowObj.x = this.obj.x;
-        this.glowObj.y = this.obj.y;
 
         if (this.glowRemaining > 0) {
             this.glowRemaining = Math.max(0, this.glowRemaining - delta);
             const glowStrength = this.glowRemaining / this.glowDuration;
-            this.glowObj.setAlpha(0.18 + (0.45 * glowStrength));
+            this.glowEffect.outerStrength = gameSettings.glow.outerStrength * glowStrength;
+            this.glowEffect.innerStrength = gameSettings.glow.innerStrength * glowStrength;
             return;
         }
 
@@ -267,9 +260,9 @@ class ActiveChar {
     }
 
     destroyGlow() {
-        if (this.glowObj != null) {
-            this.glowObj.destroy();
-            this.glowObj = null;
+        if (this.glowEffect != null) {
+            this.glowEffect.setActive(false);
+            this.glowEffect = null;
         }
     }
 }
