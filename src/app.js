@@ -64,10 +64,10 @@ const { Player } = TextAliveApp;
 let isTextAliveReady = false;
 
 class WaveState {
-    constructor(settings) {
-        this.beatDuration = settings.beatDuration;
-        this.nextFlipTime = settings.nextFlipTime;
-        this.currentTravelBeats = settings.currentTravelBeats;
+    constructor() {
+        this.beatDuration = gameSettings.wave.beatDuration;
+        this.nextFlipTime = gameSettings.wave.nextFlipTime;
+        this.currentTravelBeats = gameSettings.wave.currentTravelBeats;
         this.patterns = gameSettings.wave.patterns;
     }
 
@@ -84,16 +84,15 @@ class WaveState {
 }
 
 class Catcher {
-    constructor(scene, settings, y) {
+    constructor(scene, y) {
         this.scene = scene;
-        this.settings = settings;
         this.direction = 1;
         this.velocity = 0;
         this.sprite = scene.add.rectangle(
-            settings.xPos,
+            gameSettings.catcher.xPos,
             y,
-            settings.width,
-            settings.height,
+            gameSettings.catcher.width,
+            gameSettings.catcher.height,
             gameSettings.colors.primary
         );
 
@@ -106,14 +105,14 @@ class Catcher {
     }
 
     update(delta, sceneHeight) {
-        const targetSpeed = this.direction * sceneHeight * this.settings.maxSpeed;
-        const t = 1.0 - Math.exp(-this.settings.responsiveness * delta);
+        const targetSpeed = this.direction * sceneHeight * gameSettings.catcher.maxSpeed;
+        const t = 1.0 - Math.exp(-gameSettings.catcher.responsiveness * delta);
 
         this.velocity = Phaser.Math.Linear(this.velocity, targetSpeed, t);
         this.sprite.y += this.velocity * delta;
 
-        const minY = this.settings.marginY;
-        const maxY = sceneHeight - this.settings.marginY;
+        const minY = gameSettings.catcher.marginY;
+        const maxY = sceneHeight - gameSettings.catcher.marginY;
 
         if (this.sprite.y < minY) {
             this.sprite.y = minY;
@@ -136,9 +135,8 @@ class Catcher {
 }
 
 class CharSpawnYPointer {
-    constructor(initialY, settings) {
+    constructor(initialY) {
         this.y = initialY;
-        this.settings = settings;
         this.direction = Math.random() < 0.5 ? 1 : -1;
         this.velocity = 0;
         this.responsiveness = 5.0;
@@ -149,14 +147,14 @@ class CharSpawnYPointer {
     }
 
     update(delta, sceneHeight) {
-        const targetSpeed = this.direction * sceneHeight * this.settings.speed;
+        const targetSpeed = this.direction * sceneHeight * gameSettings.charSpawnYPointer.speed;
         const t = 1.0 - Math.exp(-this.responsiveness * delta);
 
         this.velocity = Phaser.Math.Linear(this.velocity, targetSpeed, t);
         this.y += this.velocity * delta;
 
-        const minY = this.settings.marginY;
-        const maxY = sceneHeight - this.settings.marginY;
+        const minY = gameSettings.lyrics.marginY;
+        const maxY = sceneHeight - gameSettings.lyrics.marginY;
 
         if (this.y < minY) {
             this.y = minY;
@@ -167,10 +165,6 @@ class CharSpawnYPointer {
             this.y = maxY;
             this.velocity = Math.min(0, this.velocity);
         }
-    }
-
-    get value() {
-        return this.y;
     }
 }
 
@@ -217,8 +211,8 @@ class GameScene extends Phaser.Scene {
         this.fallTime = gameSettings.lyrics.fallTimeMs * this.fallTimeMultiplier;
         this.destroyThreshold = gameSettings.lyrics.destroyOverflowRatio;
 
-        this.catcher = new Catcher(this, gameSettings.catcher, this.scale.height / 2);
-        this.waveState = new WaveState(gameSettings.wave);
+        this.catcher = new Catcher(this, this.scale.height / 2);
+        this.waveState = new WaveState();
 
         this.charGroup = this.physics.add.group();
         this.physics.add.overlap(this.catcher.sprite, this.charGroup, this.catchChar, null, this);
@@ -241,8 +235,7 @@ class GameScene extends Phaser.Scene {
 
         // Initialize spawn pointer: picks a Y within margins and a small random velocity
         this.charSpawnYPointer = new CharSpawnYPointer(
-            Phaser.Math.Between(gameSettings.lyrics.marginY, this.scale.height - gameSettings.lyrics.marginY),
-            gameSettings.lyrics
+            this.scale.height / 2
         );
 
         if (taPlayer && taPlayer.video) this.loadLyrics(taPlayer.video.firstChar);
@@ -329,7 +322,7 @@ class GameScene extends Phaser.Scene {
         // Push characters whose start time has arrived from pendingChars -> activeChars
         while (this.pendingChars.length > 0) {
             const nextChar = this.pendingChars[0];
-            const yPos = this.charSpawnYPointer.value;
+            const yPos = this.charSpawnYPointer.y;
 
             if (time >= nextChar.startTime - this.fallTime) {
 
@@ -338,13 +331,13 @@ class GameScene extends Phaser.Scene {
                     this.charSpawnYPointer.flipDirection();
                 }
 
-                const charObj = this.add.text(startX, this.charSpawnYPointer.value, nextChar.text, {
+                const charObj = this.add.text(startX, this.charSpawnYPointer.y, nextChar.text, {
                     fontFamily: gameSettings.fonts.main,
                     fontSize: gameSettings.lyrics.fontSize,
                     color: gameSettings.colors.textMain
                 }).setOrigin(0.5);
 
-                console.log(`Spawning char '${nextChar.text}' at time ${time}ms (scheduled for ${nextChar.startTime}ms), falltime ${this.fallTime}ms, startX ${startX}, spawnY ${this.charSpawnYPointer}`);
+                console.log(`Spawning char '${nextChar.text}' at time ${time}ms (scheduled for ${nextChar.startTime}ms), falltime ${this.fallTime}ms, startX ${startX}, spawnY ${this.charSpawnYPointer.y}`);
                 const charStripRef = this.spawnStrip(startX + this.charSize / 2, yPos, nextChar.endTime - nextChar.startTime - this.charSize, this.charSize / 5);
 
                 this.charGroup.add(charObj);
