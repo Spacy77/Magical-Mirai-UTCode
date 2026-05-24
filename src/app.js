@@ -1,8 +1,3 @@
-/* Main application script extracted from index.html
-   - Keeps original logic but separated for easier editing and testing
-   - Requires external libraries to be loaded before this file (see index.html)
-*/
-
 const gameSettings = {
     api: {
         token: "1O5BTRwWsXT6TfAP",
@@ -22,7 +17,7 @@ const gameSettings = {
     },
     spinner: { radius: 50, thickness: 8, rotationSpeed: 0.1 },
     button: { width: 250, height: 80, fontSize: "40px" },
-    catcher: { xPos: 120, width: 40, height: 300, maxSpeed: 1, responsiveness: 5.0, marginY: 80 }, // speed is in screen ratio, every thing needs to be used with Delta in SECONDS
+    catcher: { xPos: 120, width: 40, height: 300, maxSpeed: 1, responsiveness: 5.0, marginY: 80 }, 
     lyrics: {
         fallTimeMs: 1000,
         fallTimeMsMultiplier: 1,
@@ -49,7 +44,17 @@ const gameSettings = {
         colors: [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff],
         alpha: { min: 0.1, max: 0.6 }
     },
-    charSpawnYPointer: { speed: 1 }, // in screen ratio
+    combo: {
+        xPos: 30,
+        yOffset: 20,
+        fontSize: "100px",
+        color: "#ffffff",
+        ghostAlpha: 0.2,
+        mainScaleBounce: 1.1,
+        ghostScaleBounce: 1.4, 
+        animDuration: 500 
+    },
+    charSpawnYPointer: { speed: 1 }, 
 
     minDelayLongChar: 400,
 
@@ -67,6 +72,88 @@ const gameSettings = {
 
 const { Player } = TextAliveApp;
 let isTextAliveReady = false;
+
+class ComboCounter {
+    constructor(scene) {
+        this.scene = scene;
+        this.combo = 0;
+
+        const x = gameSettings.combo.xPos;
+        const y = scene.scale.height - gameSettings.combo.yOffset;
+
+        this.ghostText = scene.add.text(x, y, "0", {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: gameSettings.combo.fontSize,
+            color: gameSettings.combo.color,
+            fontStyle: "bold",
+            stroke: "#000000",
+            strokeThickness: 4
+        }).setOrigin(0, 1).setAlpha(gameSettings.combo.ghostAlpha).setDepth(100);
+
+        this.mainText = scene.add.text(x, y, "0", {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: gameSettings.combo.fontSize,
+            color: gameSettings.combo.color,
+            fontStyle: "bold",
+            stroke: "#000000",
+            strokeThickness: 6
+        }).setOrigin(0, 1).setDepth(101);
+    }
+
+    increment() {
+        this.combo++;
+        this.updateText();
+        this.playAnimation();
+    }
+
+    reset() {
+        if (this.combo > 0) {
+            this.combo = 0;
+            this.updateText();
+            this.scene.tweens.killTweensOf([this.mainText, this.ghostText]);
+            this.mainText.setScale(1);
+            this.ghostText.setScale(1);
+        }
+    }
+
+    updateText() {
+        const text = this.combo.toString();
+        this.mainText.setText(text);
+        this.ghostText.setText(text);
+    }
+
+    playAnimation() {
+        this.scene.tweens.killTweensOf([this.mainText, this.ghostText]);
+
+        this.scene.tweens.add({
+            targets: this.mainText,
+            scale: gameSettings.combo.mainScaleBounce,
+            duration: 40,
+            ease: 'Quad.easeOut'
+        });
+
+        this.scene.tweens.add({
+            targets: this.ghostText,
+            scale: gameSettings.combo.ghostScaleBounce,
+            duration: 60,
+            ease: 'Quad.easeOut'
+        });
+
+        this.scene.tweens.add({
+            targets: [this.mainText, this.ghostText],
+            scale: 1,
+            duration: gameSettings.combo.animDuration,
+            delay: 40,
+            ease: 'Back.easeOut'
+        });
+    }
+
+    resize(sceneHeight) {
+        const y = sceneHeight - gameSettings.combo.yOffset;
+        this.mainText.y = y;
+        this.ghostText.y = y;
+    }
+}
 
 class WaveState {
     constructor() {
@@ -306,12 +393,14 @@ class TitleScene extends Phaser.Scene {
 class GameScene extends Phaser.Scene {
     constructor() { super("GameScene"); }
     create() {
-        this.fallTimeMultiplier = gameSettings.lyrics.fallTimeMsMultiplier; // this is the only way to change fall time (this will sync other speeds)
+        this.fallTimeMultiplier = gameSettings.lyrics.fallTimeMsMultiplier;
         this.fallTime = gameSettings.lyrics.fallTimeMs * this.fallTimeMultiplier;
         this.destroyThreshold = gameSettings.lyrics.destroyOverflowRatio;
 
         this.catcher = new Catcher(this, this.scale.height / 2);
         this.waveState = new WaveState();
+
+        this.comboCounter = new ComboCounter(this);
 
         this.charGroup = this.physics.add.group();
         this.physics.add.overlap(this.catcher.sprite, this.charGroup, this.catchChar, null, this);
@@ -331,12 +420,10 @@ class GameScene extends Phaser.Scene {
         this.bgCharEndTime = 0;
         this.bgCharColorIndex = 0;
 
-        // Initialize spawn pointer: picks a Y within margins and a small random velocity
         this.charSpawnYPointer = new CharSpawnYPointer(
             this.scale.height / 2
         );
 
-        // debug graphics to visualize spawn pointer
         this.spawnPointerGraphics = this.add.graphics();
         this.spawnPointerGraphics.fillStyle(0xff0000, 1);
         this.spawnPointerGraphics.fillCircle(0, 0, 10);
@@ -344,30 +431,22 @@ class GameScene extends Phaser.Scene {
         this.spawnPointerGraphics.x = this.scale.width - 50;
         this.spawnPointerGraphics.y = this.charSpawnYPointer.y;
 
-
         if (taPlayer && taPlayer.video) this.loadLyrics(taPlayer.video.firstChar);
 
-        // display song timer for debugging
-        this.timeText = this.add.text(10, 10, "", {
+        this.fpsText = this.add.text(10, 10, "FPS: 0", {
             fontFamily: gameSettings.fonts.ui,
             fontSize: "24px",
-            color: gameSettings.colors.textMain
-        }).setOrigin(0, 0);
-        taPlayer.addListener({
-            onTimerReady: () => { this.timeText.setText("0:00.000"); },
-            onTimeUpdate: () => {
-                this.timeText.setText(taPlayer.timer.position.toString());
-            }
-        });
+            color: gameSettings.colors.textMain,
+            stroke: "#ffffff",
+            strokeThickness: 3
+        }).setOrigin(0, 0).setDepth(1000);
 
-        // Create the background char that gets updated when you catch one
         this.activeBGChar = this.add.text(this.scale.width / 2, this.scale.height / 2, "", {
             fontFamily: gameSettings.fonts.main,
             fontSize: gameSettings.backgroundLyrics.fontSize,
             color: gameSettings.backgroundLyrics.colors[this.bgCharColorIndex]
         }).setOrigin(0.5).setAlpha(0).setDepth(-1);
 
-        // Create particle effect for when you catch a char
         const particleGraphics = this.make.graphics({ x: 0, y: 0, add: false });
         particleGraphics.fillStyle(0xffffff, 1);
         particleGraphics.fillRect(0, 0, 8, 8);
@@ -384,10 +463,16 @@ class GameScene extends Phaser.Scene {
             tint: gameSettings.catchParticles.colors,
             alpha: gameSettings.catchParticles.alpha
         });
+
+        this.scale.on('resize', (gameSize) => {
+            this.comboCounter.resize(gameSize.height);
+        });
     }
 
     update(time, delta) {
-        delta = delta / 1000; // convert to seconds
+        this.fpsText.setText("FPS: " + Math.round(this.game.loop.actualFps));
+
+        delta = delta / 1000; 
         const w = this.scale.width;
         const h = this.scale.height;
         
@@ -396,7 +481,6 @@ class GameScene extends Phaser.Scene {
         const startX = w + gameSettings.lyrics.startXOffset;
 
         this.catcher.update(delta, h);
-        // update debug spawn pointer
         this.spawnPointerGraphics.y = this.charSpawnYPointer.y;
         this.charSpawnYPointer.update(delta, h);
         this.spawnPendingChars(songTime, startX, w, h);
@@ -406,7 +490,6 @@ class GameScene extends Phaser.Scene {
     }
 
     spawnPendingChars(time, startX, sceneWidth, sceneHeight) {
-        // Push characters whose start time has arrived from pendingChars -> activeChars
         while (this.pendingChars.length > 0) {
             const nextChar = this.pendingChars[0];
             const yPos = this.charSpawnYPointer.y;
@@ -414,7 +497,6 @@ class GameScene extends Phaser.Scene {
 
             if (time >= nextChar.startTime - this.fallTime) {
 
-                // Reverse direction every time the wave state changes
                 if (this.waveState.advance(time)) {
                     this.charSpawnYPointer.flipDirection();
                     glowOnSpawn = true;
@@ -426,7 +508,6 @@ class GameScene extends Phaser.Scene {
                     color: gameSettings.colors.textMain
                 }).setOrigin(0.5);
 
-                console.log(`Spawning char '${nextChar.text}' at time ${time}ms (scheduled for ${nextChar.startTime}ms), falltime ${this.fallTime}ms, startX ${startX}, spawnY ${this.charSpawnYPointer.y}`);
                 const stripLength = nextChar.endTime - nextChar.startTime - this.charSize;
 
                 this.charGroup.add(charObj);
@@ -439,8 +520,7 @@ class GameScene extends Phaser.Scene {
     }
 
     destroyStrips(delta) {
-        delta = delta * 1000; // convert to ms
-        // Lower progressively the size of each strip
+        delta = delta * 1000; 
         for (let i = this.dyingStrips.length - 1; i >= 0; i--) {
             const item = this.dyingStrips[i];
 
@@ -463,6 +543,7 @@ class GameScene extends Phaser.Scene {
             const shouldRemove = item.update(time, startX, this.catcher.x, this.fallTime, delta, this.destroyThreshold, this.fallDistance, this.charSize, this.dyingStrips);
             if (shouldRemove) {
                 this.activeChars.splice(i, 1);
+                this.comboCounter.reset();
             }
         }
     }
@@ -475,8 +556,9 @@ class GameScene extends Phaser.Scene {
             const char = this.activeChars[idx];
             this.activeChars.splice(idx, 1);
             char.retire(this.dyingStrips, this.fallDistance, this.fallTime);
+            
+            this.comboCounter.increment();
 
-            // Update background character text
             const charDuration = char.char.endTime - char.char.startTime;
             this.bgCharStartTime = taPlayer.timer.position;
             this.bgCharEndTime = taPlayer.timer.position + charDuration;
@@ -488,8 +570,6 @@ class GameScene extends Phaser.Scene {
             const color = gameSettings.backgroundLyrics.colors[Math.floor(Math.random() * gameSettings.backgroundLyrics.colors.length)];
             this.activeBGChar.setColor(color);
             this.activeBGChar.setFontSize(gameSettings.backgroundLyrics.fontSize);
-
-            //window.navigator.vibrate(charDuration); TODO : fix
         }
     }
 
@@ -522,8 +602,6 @@ class GameScene extends Phaser.Scene {
             if (char.text.trim().length > 0) this.pendingChars.push(char);
             char = char.next;
         }
-
-        // sort pending chars by start time just in case
         this.pendingChars.sort((a, b) => a.startTime - b.startTime);
     }
 }
