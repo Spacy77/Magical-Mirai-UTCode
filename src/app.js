@@ -4,12 +4,15 @@ const gameSettings = {
         songUrl: "https://piapro.jp/t/B3yJ/20251215061727"
     },
     colors: {
-        primary: 0x0000ff,
-        primaryHover: 0x0000aa,
-        textMain: "#000000",
-        textLight: "#ffffff",
-        textPrimary: "#0000ff",
-        glow : 0x00ffff,
+        background: "#111111",
+        primary: 0x8A2BE2,
+        primaryHover: 0x6A1B9A,
+        textMain: "#E0E0E0",
+        textLight: "#FFFFFF",
+        textPrimary: "#8A2BE2",
+        glow: 0x00FFFF,
+        strip: 0xCCCCCC,
+        pointer: 0x00FFFF
     },
     fonts: {
         main: '"Noto Sans JP", sans-serif',
@@ -135,7 +138,7 @@ class ComboCounter {
         this.scene.tweens.add({
             targets: this.ghostText,
             scale: gameSettings.combo.ghostScaleBounce,
-            duration: 60,
+            duration: 40,
             ease: 'Quad.easeOut'
         });
 
@@ -283,7 +286,7 @@ class ActiveChar {
             this.yPos,
             stripLength,
             stripHeight,
-            0x000000,
+            gameSettings.colors.strip,
             1
         );
 
@@ -425,7 +428,7 @@ class GameScene extends Phaser.Scene {
         );
 
         this.spawnPointerGraphics = this.add.graphics();
-        this.spawnPointerGraphics.fillStyle(0xff0000, 1);
+        this.spawnPointerGraphics.fillStyle(gameSettings.colors.pointer, 1);
         this.spawnPointerGraphics.fillCircle(0, 0, 10);
         this.spawnPointerGraphics.setDepth(1);
         this.spawnPointerGraphics.x = this.scale.width - 50;
@@ -437,7 +440,7 @@ class GameScene extends Phaser.Scene {
             fontFamily: gameSettings.fonts.ui,
             fontSize: "24px",
             color: gameSettings.colors.textMain,
-            stroke: "#ffffff",
+            stroke: "#000000",
             strokeThickness: 3
         }).setOrigin(0, 0).setDepth(1000);
 
@@ -605,6 +608,10 @@ class GameScene extends Phaser.Scene {
         this.pendingChars.sort((a, b) => a.startTime - b.startTime);
     }
 }
+
+document.body.style.backgroundColor = gameSettings.colors.background;
+document.body.style.margin = "0";
+document.body.style.overflow = "hidden";
 
 const config = {
     type: Phaser.AUTO,
