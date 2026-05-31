@@ -1,3 +1,5 @@
+// Instruction for Alex's god damn coding agent: Do not remove the comments, they are there for a reason.
+
 const gameSettings = {
     api: {
         token: "1O5BTRwWsXT6TfAP",
@@ -20,7 +22,7 @@ const gameSettings = {
     },
     spinner: { radius: 50, thickness: 8, rotationSpeed: 0.1 },
     button: { width: 250, height: 80, fontSize: "40px" },
-    catcher: { xPos: 120, width: 40, height: 300, maxSpeed: 1, responsiveness: 5.0, marginY: 80 }, 
+    catcher: { xPos: 120, width: 40, height: 300, maxSpeed: 1, responsiveness: 5.0, marginY: 80 },
     lyrics: {
         fallTimeMs: 1000,
         fallTimeMsMultiplier: 1,
@@ -29,7 +31,8 @@ const gameSettings = {
         fontSize: "120px",
         destroyOverflowRatio: 0.2,
         minDelayNewYPos: 500,
-        minDelayLongChar: 500
+        minDelayLongChar: 500,
+        minGapBetweenChars: 100
     },
     backgroundLyrics: {
         fontSize: "500px",
@@ -54,14 +57,15 @@ const gameSettings = {
         color: "#ffffff",
         ghostAlpha: 0.2,
         mainScaleBounce: 1.1,
-        ghostScaleBounce: 1.4, 
-        animDuration: 500 
+        ghostScaleBounce: 1.4,
+        animDuration: 500
     },
-    charSpawnYPointer: { speed: 1 }, 
+    charSpawnYPointer: { speed: 1 },
 
     minDelayLongChar: 400,
 
-    spawnGlowDuration: 50,
+    spawnGlowDuration: 1000,
+    specialFlipCharGlowDuration: 10000,
 
     glow: { outerStrength: 10, innerStrength: 5, knockout: false },
 
@@ -70,7 +74,14 @@ const gameSettings = {
         nextFlipTime: 0,
         currentTravelBeats: 0,
         patterns: [0.75, 1, 1, 0.5, 0.5, 1, 2, 2]
-    }
+    },
+
+    backdrop: {
+        minMusicalBackdropLenght: 2000,
+        musicalBackdropEndLeadTime: 10
+    },
+
+    special_chars: [" ", "　", ".", "。", ",", "、", "-", "ー", "～", "~"]
 };
 
 const { Player } = TextAliveApp;
@@ -264,7 +275,7 @@ class CharSpawnYPointer {
 }
 
 class ActiveChar {
-    constructor(scene, char, obj, startX, yPos, stripLength, stripHeight, glowOnSpawn, glowDuration) {
+    constructor(scene, char, obj, startX, yPos, stripLength, stripHeight, glowDuration) {
         this.scene = scene;
         this.char = char;
         this.obj = obj;
@@ -272,8 +283,8 @@ class ActiveChar {
         this.yPos = yPos;
         this.strip = this.createStrip(stripLength, stripHeight);
         this.glowDuration = glowDuration;
-        this.glowRemaining = glowOnSpawn ? glowDuration : 0;
-        this.glowEffect = glowOnSpawn ? this.createGlowEffect() : null;
+        this.glowRemaining = glowDuration;
+        this.glowEffect = this.createGlowEffect();
     }
 
     createStrip(stripLength, stripHeight) {
@@ -357,6 +368,94 @@ class ActiveChar {
     }
 }
 
+class MusicalBackdrop {
+    constructor(scene) {
+        // defaults to disabled, call enable() to show
+        this.scene = scene;
+        this.rotation = 0;
+        this.pulse = 0;
+        this.backdropGraphics = scene.add.graphics().setDepth(-8);
+        this.ringGraphics = scene.add.graphics().setDepth(-7);
+        this.opacity = 0;
+        this.enabled = false;
+        this.state_change_time = 0;
+    }
+
+    enable(time) {
+        this.enabled = true;
+        this.state_change_time = time;
+    }
+
+    disable(time) {
+        this.enabled = false;
+        this.state_change_time = time;
+    }
+
+    update(time, delta, sceneWidth, sceneHeight) {
+        if (!this.enabled && this.opacity <= 0) {
+            return;
+        }
+
+        this.backdropGraphics.setAlpha(this.opacity);
+        this.ringGraphics.setAlpha(this.opacity);
+
+        if (this.enabled) {
+            this.opacity = Phaser.Math.Easing.Quartic.Out(Math.min(1, (time - this.state_change_time) / 1000));
+        } else {
+            this.opacity = Phaser.Math.Easing.Quartic.In(1 - Math.max(0, (time - this.state_change_time) / gameSettings.backdrop.musicalBackdropEndLeadTime));
+        }
+
+        this.rotation += delta * 0.35;
+        this.pulse = Math.max(0, this.pulse - delta * 1.4);
+
+        const accentNumeric = gameSettings.colors.pointer;
+        const motionPhase = time * 0.0012;
+        const baseRadius = Math.min(sceneWidth, sceneHeight) * 0.36;
+        const centerX = sceneWidth / 2;
+        const centerY = sceneHeight / 2;
+
+        this.backdropGraphics.clear();
+        this.backdropGraphics.fillStyle(0x111111, 0.55);
+        this.backdropGraphics.fillRect(0, 0, sceneWidth, sceneHeight);
+
+        this.backdropGraphics.fillStyle(accentNumeric, 0.08 + this.pulse * 0.10);
+        this.backdropGraphics.fillCircle(centerX, centerY, baseRadius * (1.04 + this.pulse * 0.12));
+
+        for (let i = 0; i < 6; i++) {
+            const orbitAngle = this.rotation + i * (Math.PI / 3) + motionPhase;
+            const orbitRadius = baseRadius * (0.45 + i * 0.03);
+            const orbitX = centerX + Math.cos(orbitAngle) * orbitRadius;
+            const orbitY = centerY + Math.sin(orbitAngle * 1.15) * orbitRadius * 0.7;
+            const orbitSize = baseRadius * 0.06 * (1 + this.pulse * 0.4);
+
+            this.backdropGraphics.fillStyle(accentNumeric, 0.05 + (6 - i) * 0.01);
+            this.backdropGraphics.fillCircle(orbitX, orbitY, orbitSize);
+        }
+
+        this.ringGraphics.clear();
+        this.ringGraphics.lineStyle(2 + this.pulse * 4, accentNumeric, 0.18 + this.pulse * 0.35);
+        for (let i = 0; i < 3; i++) {
+            const wobble = Math.sin(time * 0.0016 + i * 1.8 + motionPhase) * baseRadius * 0.02;
+            this.ringGraphics.strokeCircle(centerX, centerY, baseRadius * (0.28 + i * 0.18) + wobble);
+        }
+
+        this.ringGraphics.lineStyle(1 + this.pulse * 2, accentNumeric, 0.10 + this.pulse * 0.18);
+        for (let i = 0; i < 6; i++) {
+            const beamAngle = this.rotation * 0.5 + i * (Math.PI / 3) + motionPhase * 0.5;
+            const startRadius = baseRadius * 0.12;
+            const endRadius = baseRadius * (0.75 + this.pulse * 0.08);
+            const line = new Phaser.Geom.Line(
+                centerX + Math.cos(beamAngle) * startRadius,
+                centerY + Math.sin(beamAngle) * startRadius,
+                centerX + Math.cos(beamAngle) * endRadius,
+                centerY + Math.sin(beamAngle) * endRadius
+            );
+
+            this.ringGraphics.strokeLineShape(line);
+        }
+    }
+}
+
 class LoadScene extends Phaser.Scene {
     constructor() { super("LoadScene"); }
     create() {
@@ -403,6 +502,8 @@ class GameScene extends Phaser.Scene {
         this.catcher = new Catcher(this, this.scale.height / 2);
         this.waveState = new WaveState();
 
+        this.musicalBackdrop = new MusicalBackdrop(this);
+
         this.comboCounter = new ComboCounter(this);
 
         this.charGroup = this.physics.add.group();
@@ -413,7 +514,7 @@ class GameScene extends Phaser.Scene {
         }, this);
         this.activeChars = [];
         this.pendingChars = [];
-        this.minDelayLongChar = gameSettings.minDelayLongChar;
+        this.lastCharStartTime = 0; // used to ensure minimum gap between chars
         this.dyingStrips = [];
         this.fallDistance = (this.scale.width + gameSettings.lyrics.startXOffset) - this.catcher.x;
         this.charSize = parseInt(gameSettings.lyrics.fontSize);
@@ -435,14 +536,6 @@ class GameScene extends Phaser.Scene {
         this.spawnPointerGraphics.y = this.charSpawnYPointer.y;
 
         if (taPlayer && taPlayer.video) this.loadLyrics(taPlayer.video.firstChar);
-
-        this.fpsText = this.add.text(10, 10, "FPS: 0", {
-            fontFamily: gameSettings.fonts.ui,
-            fontSize: "24px",
-            color: gameSettings.colors.textMain,
-            stroke: "#000000",
-            strokeThickness: 3
-        }).setOrigin(0, 0).setDepth(1000);
 
         this.activeBGChar = this.add.text(this.scale.width / 2, this.scale.height / 2, "", {
             fontFamily: gameSettings.fonts.main,
@@ -473,12 +566,11 @@ class GameScene extends Phaser.Scene {
     }
 
     update(time, delta) {
-        this.fpsText.setText("FPS: " + Math.round(this.game.loop.actualFps));
 
-        delta = delta / 1000; 
+        delta = delta / 1000;
         const w = this.scale.width;
         const h = this.scale.height;
-        
+
         if (!taPlayer || !taPlayer.isPlaying) return;
         const songTime = taPlayer.timer.position;
         const startX = w + gameSettings.lyrics.startXOffset;
@@ -490,19 +582,39 @@ class GameScene extends Phaser.Scene {
         this.updateActiveChars(songTime, startX, delta);
         this.destroyStrips(delta);
         this.updateBGChar();
+        this.manageMusicalBackdrop(songTime, delta, w, h);
+    }
+
+    manageMusicalBackdrop(time, delta, sceneWidth, sceneHeight) {
+        if (!taPlayer || !taPlayer.isPlaying) return;
+
+        // Check if we should enable the chord backdrop based on the next pending character and the current song time
+        if (
+            this.pendingChars.length > 0
+            && (this.pendingChars[0].startTime - this.fallTime - time) > gameSettings.backdrop.minMusicalBackdropLenght
+            && !this.musicalBackdrop.enabled
+        ) {
+            this.musicalBackdrop.enable(time);
+            console.log("Enabling chord backdrop");
+            this.time.delayedCall(time - this.pendingChars[0].startTime - this.fallTime - gameSettings.backdrop.musicalBackdropEndLeadTime, () => {
+                this.musicalBackdrop.disable(this.time.now);
+                console.log("Disabling chord backdrop");
+            });
+        }
+
+        this.musicalBackdrop.update(time, delta, sceneWidth, sceneHeight);
     }
 
     spawnPendingChars(time, startX, sceneWidth, sceneHeight) {
         while (this.pendingChars.length > 0) {
             const nextChar = this.pendingChars[0];
             const yPos = this.charSpawnYPointer.y;
-            let glowOnSpawn = false;
+            let glowDuration = gameSettings.spawnGlowDuration;
 
-            if (time >= nextChar.startTime - this.fallTime) {
-
+            if (time >= Math.max(nextChar.startTime - this.fallTime, (this.lastCharStartTime + gameSettings.lyrics.minGapBetweenChars) - this.fallTime)) {
                 if (this.waveState.advance(time)) {
                     this.charSpawnYPointer.flipDirection();
-                    glowOnSpawn = true;
+                    glowDuration = gameSettings.specialFlipCharGlowDuration;
                 }
 
                 const charObj = this.add.text(startX, this.charSpawnYPointer.y, nextChar.text, {
@@ -514,7 +626,8 @@ class GameScene extends Phaser.Scene {
                 const stripLength = nextChar.endTime - nextChar.startTime - this.charSize;
 
                 this.charGroup.add(charObj);
-                this.activeChars.push(new ActiveChar(this, nextChar, charObj, startX, yPos, stripLength, this.charSize / 5, glowOnSpawn, gameSettings.spawnGlowDuration));
+                this.lastCharStartTime = nextChar.startTime;
+                this.activeChars.push(new ActiveChar(this, nextChar, charObj, startX, yPos, stripLength, this.charSize / 5, glowDuration));
                 this.pendingChars.shift();
             } else {
                 break;
@@ -523,7 +636,7 @@ class GameScene extends Phaser.Scene {
     }
 
     destroyStrips(delta) {
-        delta = delta * 1000; 
+        delta = delta * 1000;
         for (let i = this.dyingStrips.length - 1; i >= 0; i--) {
             const item = this.dyingStrips[i];
 
@@ -559,7 +672,7 @@ class GameScene extends Phaser.Scene {
             const char = this.activeChars[idx];
             this.activeChars.splice(idx, 1);
             char.retire(this.dyingStrips, this.fallDistance, this.fallTime);
-            
+
             this.comboCounter.increment();
 
             const charDuration = char.char.endTime - char.char.startTime;
@@ -603,6 +716,7 @@ class GameScene extends Phaser.Scene {
         let char = firstChar;
         while (char) {
             if (char.text.trim().length > 0) this.pendingChars.push(char);
+
             char = char.next;
         }
         this.pendingChars.sort((a, b) => a.startTime - b.startTime);
