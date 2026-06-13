@@ -372,13 +372,17 @@ class MusicalBackdrop {
     constructor(scene) {
         // defaults to disabled, call enable() to show
         this.scene = scene;
-        this.rotation = 0;
+        this.scroll = 0;
         this.pulse = 0;
-        this.backdropGraphics = scene.add.graphics().setDepth(-8);
-        this.ringGraphics = scene.add.graphics().setDepth(-7);
+        this.backdropGraphics = scene.add.graphics().setDepth(-10);
+        this.gridGraphics = scene.add.graphics().setDepth(-9);
+        this.clipGraphics = scene.add.graphics().setDepth(-8);
+        this.playheadGraphics = scene.add.graphics().setDepth(-7);
         this.opacity = 0;
         this.enabled = false;
         this.state_change_time = 0;
+        this.trackSeed = [0.32, 0.68, 0.45, 0.82, 0.54, 0.74, 0.38, 0.62];
+        this.clipColors = [0x8a2be2, 0x9d4edd, 0x7b2cbf, 0xc77dff, 0x5a189a, 0xb5179e];
     }
 
     enable(time) {
@@ -392,67 +396,166 @@ class MusicalBackdrop {
     }
 
     update(time, delta, sceneWidth, sceneHeight) {
-        if (!this.enabled && this.opacity <= 0) {
-            return;
-        }
-
-        this.backdropGraphics.setAlpha(this.opacity);
-        this.ringGraphics.setAlpha(this.opacity);
+        const baseOpacity = 0.45;
+        const targetOpacity = this.enabled ? 1 : baseOpacity;
+        const fadeDuration = this.enabled ? 1000 : gameSettings.backdrop.musicalBackdropEndLeadTime;
+        const fadeProgress = Phaser.Math.Clamp((time - this.state_change_time) / fadeDuration, 0, 1);
 
         if (this.enabled) {
-            this.opacity = Phaser.Math.Easing.Quartic.Out(Math.min(1, (time - this.state_change_time) / 1000));
+            this.opacity = Phaser.Math.Easing.Quartic.Out(fadeProgress);
         } else {
-            this.opacity = Phaser.Math.Easing.Quartic.In(1 - Math.max(0, (time - this.state_change_time) / gameSettings.backdrop.musicalBackdropEndLeadTime));
+            this.opacity = Phaser.Math.Linear(this.opacity || baseOpacity, targetOpacity, Phaser.Math.Easing.Quartic.Out(fadeProgress));
         }
 
-        this.rotation += delta * 0.35;
-        this.pulse = Math.max(0, this.pulse - delta * 1.4);
+        const layerAlpha = Phaser.Math.Clamp(this.opacity, baseOpacity, 1);
+        this.backdropGraphics.setAlpha(layerAlpha);
+        this.gridGraphics.setAlpha(layerAlpha);
+        this.clipGraphics.setAlpha(layerAlpha);
+        this.playheadGraphics.setAlpha(layerAlpha);
+
+        this.scroll += delta * (this.enabled ? 72 : 42);
+        this.pulse = 0.5 + Math.sin(time * 0.006) * 0.5;
 
         const accentNumeric = gameSettings.colors.pointer;
-        const motionPhase = time * 0.0012;
-        const baseRadius = Math.min(sceneWidth, sceneHeight) * 0.36;
-        const centerX = sceneWidth / 2;
-        const centerY = sceneHeight / 2;
+        const leftGutter = Math.max(110, sceneWidth * 0.11);
+        const rightEdge = sceneWidth + 40;
+        const top = Math.max(44, sceneHeight * 0.08);
+        const bottom = sceneHeight - Math.max(58, sceneHeight * 0.08);
+        const usableHeight = Math.max(180, bottom - top);
+        const trackCount = Phaser.Math.Clamp(Math.floor(usableHeight / 72), 4, 8);
+        const trackGap = 8;
+        const trackHeight = (usableHeight - trackGap * (trackCount - 1)) / trackCount;
+        const barWidth = Math.max(120, sceneWidth / 8);
+        const minorWidth = barWidth / 4;
+        const clipSpacing = barWidth * 1.42;
+        const clipCycleWidth = clipSpacing * 8;
 
         this.backdropGraphics.clear();
-        this.backdropGraphics.fillStyle(0x111111, 0.55);
+        this.backdropGraphics.fillStyle(0x0b0d12, 0.86);
         this.backdropGraphics.fillRect(0, 0, sceneWidth, sceneHeight);
+        this.backdropGraphics.fillStyle(0x151824, 0.72);
+        this.backdropGraphics.fillRect(leftGutter, top - 22, sceneWidth - leftGutter, usableHeight + 44);
+        this.backdropGraphics.fillStyle(0x10131b, 0.9);
+        this.backdropGraphics.fillRect(0, top - 22, leftGutter, usableHeight + 44);
 
-        this.backdropGraphics.fillStyle(accentNumeric, 0.08 + this.pulse * 0.10);
-        this.backdropGraphics.fillCircle(centerX, centerY, baseRadius * (1.04 + this.pulse * 0.12));
-
-        for (let i = 0; i < 6; i++) {
-            const orbitAngle = this.rotation + i * (Math.PI / 3) + motionPhase;
-            const orbitRadius = baseRadius * (0.45 + i * 0.03);
-            const orbitX = centerX + Math.cos(orbitAngle) * orbitRadius;
-            const orbitY = centerY + Math.sin(orbitAngle * 1.15) * orbitRadius * 0.7;
-            const orbitSize = baseRadius * 0.06 * (1 + this.pulse * 0.4);
-
-            this.backdropGraphics.fillStyle(accentNumeric, 0.05 + (6 - i) * 0.01);
-            this.backdropGraphics.fillCircle(orbitX, orbitY, orbitSize);
+        this.gridGraphics.clear();
+        this.gridGraphics.lineStyle(1, 0xffffff, 0.05);
+        for (let i = 0; i <= trackCount; i++) {
+            const y = top + i * (trackHeight + trackGap) - trackGap / 2;
+            this.gridGraphics.lineBetween(0, y, rightEdge, y);
         }
 
-        this.ringGraphics.clear();
-        this.ringGraphics.lineStyle(2 + this.pulse * 4, accentNumeric, 0.18 + this.pulse * 0.35);
-        for (let i = 0; i < 3; i++) {
-            const wobble = Math.sin(time * 0.0016 + i * 1.8 + motionPhase) * baseRadius * 0.02;
-            this.ringGraphics.strokeCircle(centerX, centerY, baseRadius * (0.28 + i * 0.18) + wobble);
+        const firstMinor = leftGutter - (this.scroll % minorWidth);
+        for (let x = firstMinor; x < rightEdge; x += minorWidth) {
+            const isBar = Math.round((x - firstMinor) / minorWidth) % 4 === 0;
+            this.gridGraphics.lineStyle(isBar ? 2 : 1, isBar ? accentNumeric : 0xffffff, isBar ? 0.17 : 0.055);
+            this.gridGraphics.lineBetween(x, top - 22, x, bottom + 22);
         }
 
-        this.ringGraphics.lineStyle(1 + this.pulse * 2, accentNumeric, 0.10 + this.pulse * 0.18);
-        for (let i = 0; i < 6; i++) {
-            const beamAngle = this.rotation * 0.5 + i * (Math.PI / 3) + motionPhase * 0.5;
-            const startRadius = baseRadius * 0.12;
-            const endRadius = baseRadius * (0.75 + this.pulse * 0.08);
-            const line = new Phaser.Geom.Line(
-                centerX + Math.cos(beamAngle) * startRadius,
-                centerY + Math.sin(beamAngle) * startRadius,
-                centerX + Math.cos(beamAngle) * endRadius,
-                centerY + Math.sin(beamAngle) * endRadius
-            );
+        this.clipGraphics.clear();
+        for (let i = 0; i < trackCount; i++) {
+            const trackY = top + i * (trackHeight + trackGap);
+            const laneColor = this.clipColors[i % this.clipColors.length];
+            const trackNameWidth = leftGutter - 28;
 
-            this.ringGraphics.strokeLineShape(line);
+            this.clipGraphics.fillStyle(laneColor, 0.12);
+            this.clipGraphics.fillRect(16, trackY, trackNameWidth, trackHeight);
+            this.clipGraphics.lineStyle(1, laneColor, 0.18);
+            this.clipGraphics.strokeRect(16, trackY, trackNameWidth, trackHeight);
+            this.clipGraphics.fillStyle(laneColor, 0.18 + this.pulse * 0.06);
+            this.clipGraphics.fillRect(26, trackY + 10, 8, trackHeight - 20);
+
+            for (let c = 0; c < 8; c++) {
+                const seed = this.trackSeed[(i + c + this.trackSeed.length) % this.trackSeed.length];
+                const clipWidth = barWidth * (0.72 + seed * 0.9);
+                const travel = this.scroll * (0.55 + i * 0.04);
+                const cycleOffset = travel % clipCycleWidth;
+                let clipX = leftGutter + c * clipSpacing - cycleOffset;
+                const clipY = trackY + 8 + (i % 2) * 3;
+                const clipHeight = trackHeight - 16 - (i % 3) * 4;
+
+                if (clipX + clipWidth < -80) {
+                    clipX += clipCycleWidth;
+                }
+
+                if (clipX > rightEdge + 80 || clipX + clipWidth < -80) {
+                    continue;
+                }
+
+                this.clipGraphics.fillStyle(laneColor, 0.16 + (this.enabled ? 0.1 : 0));
+                this.clipGraphics.fillRoundedRect(clipX, clipY, clipWidth, clipHeight, 6);
+                this.clipGraphics.lineStyle(1, laneColor, 0.34);
+                this.clipGraphics.strokeRoundedRect(clipX, clipY, clipWidth, clipHeight, 6);
+
+                if (i % 3 === 1) {
+                    this.drawMidiNotes(this.clipGraphics, clipX, clipY, clipWidth, clipHeight, laneColor, time, i, c);
+                } else if (i % 3 === 2) {
+                    this.drawAutomation(this.clipGraphics, clipX, clipY, clipWidth, clipHeight, laneColor, time, i);
+                } else {
+                    this.drawWaveform(this.clipGraphics, clipX, clipY, clipWidth, clipHeight, laneColor, time, i);
+                }
+            }
         }
+
+        this.drawPlayhead(leftGutter, top - 28, bottom + 28, sceneWidth, accentNumeric);
+    }
+
+    drawWaveform(graphics, x, y, width, height, color, time, trackIndex) {
+        const centerY = y + height / 2;
+        const steps = 18;
+
+        graphics.lineStyle(2, color, 0.33);
+        for (let i = 0; i < steps; i++) {
+            const px = x + (i / steps) * width;
+            const amp = Math.sin(time * 0.004 + i * 0.9 + trackIndex) * height * 0.22;
+            graphics.lineBetween(px, centerY - amp, px + width / steps * 0.46, centerY + amp * 0.55);
+        }
+    }
+
+    drawMidiNotes(graphics, x, y, width, height, color, time, trackIndex, clipIndex) {
+        const rows = 5;
+        const noteHeight = Math.max(3, height / 9);
+
+        graphics.fillStyle(color, 0.3);
+        for (let i = 0; i < 10; i++) {
+            const rowIndex = i * 2 + trackIndex + clipIndex;
+            const row = ((rowIndex % rows) + rows) % rows;
+            const noteX = x + 12 + i * (width - 24) / 10;
+            const noteY = y + 10 + row * (height - 20) / rows;
+            const noteWidth = width * (0.06 + ((i + trackIndex) % 3) * 0.025);
+            const shimmer = Math.sin(time * 0.007 + i) > 0.75 ? 0.12 : 0;
+            graphics.fillStyle(color, 0.25 + shimmer);
+            graphics.fillRoundedRect(noteX, noteY, noteWidth, noteHeight, 3);
+        }
+    }
+
+    drawAutomation(graphics, x, y, width, height, color, time, trackIndex) {
+        const points = 7;
+        let prevX = x + 10;
+        let prevY = y + height * (0.48 + Math.sin(time * 0.002 + trackIndex) * 0.18);
+
+        graphics.lineStyle(2, color, 0.32);
+        for (let i = 1; i <= points; i++) {
+            const nextX = x + 10 + (i / points) * (width - 20);
+            const nextY = y + height * (0.5 + Math.sin(time * 0.002 + i * 1.2 + trackIndex) * 0.26);
+            graphics.lineBetween(prevX, prevY, nextX, nextY);
+            graphics.fillStyle(color, 0.38);
+            graphics.fillCircle(nextX, nextY, 3);
+            prevX = nextX;
+            prevY = nextY;
+        }
+    }
+
+    drawPlayhead(leftGutter, top, bottom, sceneWidth, color) {
+        const playheadX = leftGutter + Math.max(72, (sceneWidth - leftGutter) * 0.16);
+
+        this.playheadGraphics.clear();
+        this.playheadGraphics.lineStyle(3, color, 0.56 + this.pulse * 0.22);
+        this.playheadGraphics.lineBetween(playheadX, top, playheadX, bottom);
+        this.playheadGraphics.fillStyle(color, 0.16 + this.pulse * 0.1);
+        this.playheadGraphics.fillTriangle(playheadX - 9, top, playheadX + 9, top, playheadX, top + 14);
+        this.playheadGraphics.fillStyle(color, 0.05);
+        this.playheadGraphics.fillRect(playheadX, top, sceneWidth - playheadX, bottom - top);
     }
 }
 
