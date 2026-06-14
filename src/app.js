@@ -17,8 +17,8 @@ const gameSettings = {
         pointer: 0x00FFFF
     },
     fonts: {
-        main: '"Noto Sans JP", sans-serif',
-        ui: 'sans-serif'
+        main: 'jackeyfont',
+        ui: 'jackeyfont'
     },
     spinner: { radius: 50, thickness: 8, rotationSpeed: 0.1 },
     button: { width: 250, height: 80, fontSize: "40px" },
@@ -27,28 +27,29 @@ const gameSettings = {
         width: 40, 
         height: 300, 
         maxSpeed: 1, 
-        responsiveness: 25.0, 
+        responsiveness: 25.0,
         marginY: 80,
         slowedSpeed: 0.05
     },
     lyrics: {
-        fallTimeMs: 1000,
+        fallTimeMs: 1300,
         fallTimeMsMultiplier: 1,
         startXOffset: 100,
         marginY: 100,
-        fontSize: "120px",
+        fontSize: "160px",
         destroyOverflowRatio: 0.2,
         minDelayNewYPos: 500,
         minDelayLongChar: 500,
         minGapBetweenChars: 100
     },
     backgroundLyrics: {
-        fontSize: "500px",
-        maxDurationBGEffect: 200,
+        fontSize: "450px",
+        maxDurationBGEffect: 150,
         maxDurationBGAnim: 100,
-        sizeChangeCoeff: 5,
+        sizeChangeCoeff: 10,
         colors: ["#D00000", "#FFB703", "#2A9D8F", "#3A86FF", "#8338EC"],
-        startAlpha: 0.5
+        startAlpha: 0.5,
+        fadeOutSpeed: 5
     },
     catchParticles: {
         maxSpeed: 50,
@@ -60,14 +61,20 @@ const gameSettings = {
         effectSize: 225
     },
     combo: {
-        xPos: 200,
-        yOffset: 20,
-        fontSize: "100px",
+        xOffset: 100,
+        mainYOffset: 125,
+        scoreYOffset: 175,
+        fontSize: 100,
         color: "#ffffff",
         ghostAlpha: 0.2,
         mainScaleBounce: 1.1,
         ghostScaleBounce: 1.4,
-        animDuration: 500
+        animDuration: 500,
+
+        displayXOffset: 230,
+        displayMainYOffset: 90,
+        displayScoreYOffset: 170,
+        displayFontSize: 40
     },
     charSpawnYPointer: { speed: 1 },
 
@@ -76,7 +83,7 @@ const gameSettings = {
     spawnGlowDuration: 1000,
     specialFlipCharGlowDuration: 10000,
 
-    glow: { outerStrength: 10, innerStrength: 5, knockout: false },
+    glow: { outerStrength: 2, innerStrength: 1, knockout: false },
 
     wave: {
         beatDuration: 500,
@@ -100,38 +107,89 @@ class ComboCounter {
     constructor(scene) {
         this.scene = scene;
         this.combo = 0;
+        this.comboPoints = 0;
+        this.totalScore = 0;
 
-        const x = scene.scale.width - gameSettings.combo.xPos;
-        const y = scene.scale.height - gameSettings.combo.yOffset;
+        this.valueX = this.scene.scale.width - gameSettings.combo.xOffset;
+        this.displayX = this.scene.scale.width - gameSettings.combo.displayXOffset;
+        this.varXOffset = 0;
 
-        this.ghostText = scene.add.text(x, y, "0", {
+        this.ghostText = scene.add.text(this.valueX, gameSettings.combo.mainYOffset, "0", {
             fontFamily: gameSettings.fonts.ui,
-            fontSize: gameSettings.combo.fontSize,
+            fontSize: `${gameSettings.combo.fontSize}px`,
             color: gameSettings.combo.color,
             fontStyle: "bold",
             stroke: "#000000",
             strokeThickness: 4
         }).setOrigin(0, 1).setAlpha(gameSettings.combo.ghostAlpha).setDepth(100);
 
-        this.mainText = scene.add.text(x, y, "0", {
+        this.mainText = scene.add.text(this.valueX, gameSettings.combo.mainYOffset, "0", {
             fontFamily: gameSettings.fonts.ui,
-            fontSize: gameSettings.combo.fontSize,
+            fontSize: `${gameSettings.combo.fontSize}px`,
             color: gameSettings.combo.color,
             fontStyle: "bold",
             stroke: "#000000",
             strokeThickness: 6
         }).setOrigin(0, 1).setDepth(101);
+
+        this.totalScoreText = scene.add.text(this.valueX, gameSettings.combo.scoreYOffset, "0", {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: `${gameSettings.combo.fontSize / 2}px`,
+            color: gameSettings.combo.color,
+            fontStyle: "bold",
+            stroke: "#000000",
+            strokeThickness: 6
+        }).setOrigin(0, 1).setDepth(102);
+
+        // Display text in front of combo and score
+        this.displayComboText = scene.add.text(this.displayX, gameSettings.combo.displayMainYOffset, "Combo", {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: `${gameSettings.combo.displayFontSize}px`,
+            color: gameSettings.combo.color,
+            fontStyle: "bold",
+            stroke: "#000000",
+            strokeThickness: 6
+        }).setOrigin(0, 1).setDepth(102);
+
+        this.displayTotalScoreText = scene.add.text(this.displayX, gameSettings.combo.displayScoreYOffset, "Score", {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: `${gameSettings.combo.displayFontSize}px`,
+            color: gameSettings.combo.color,
+            fontStyle: "bold",
+            stroke: "#000000",
+            strokeThickness: 6
+        }).setOrigin(0, 1).setDepth(102);
     }
 
     increment() {
         this.combo++;
+        this.comboPoints = this.calcPointsCurrentCombo(this.combo);
+
+        if (this.comboPoints == 11 || this.comboPoints == 102 || this.comboPoints == 1002){
+            this.varXOffset += gameSettings.combo.fontSize / 2;
+
+            this.ghostText.x = this.valueX - this.varXOffset;
+            this.mainText.x = this.valueX - this.varXOffset;
+            this.totalScoreText.x = this.valueX - this.varXOffset;
+            this.displayComboText.x = this.displayX - this.varXOffset;
+            this.displayTotalScoreText.x = this.displayX - this.varXOffset;
+        }
+
         this.updateText();
         this.playAnimation();
     }
 
     reset() {
         if (this.combo > 0) {
+            this.totalScore += this.comboPoints;
             this.combo = 0;
+            this.comboPoints = 0;
+
+            this.varXOffset = 0;
+            this.ghostText.x = this.valueX;
+            this.mainText.x = this.valueX;
+            this.totalScoreText.x = this.valueX;
+
             this.updateText();
             this.scene.tweens.killTweensOf([this.mainText, this.ghostText]);
             this.mainText.setScale(1);
@@ -140,9 +198,12 @@ class ComboCounter {
     }
 
     updateText() {
-        const text = this.combo.toString();
+        const text = this.comboPoints.toString();
         this.mainText.setText(text);
         this.ghostText.setText(text);
+
+        const totalText = (this.comboPoints + this.totalScore).toString();
+        this.totalScoreText.setText(totalText);
     }
 
     playAnimation() {
@@ -175,6 +236,18 @@ class ComboCounter {
         const y = sceneHeight - gameSettings.combo.yOffset;
         this.mainText.y = y;
         this.ghostText.y = y;
+    }
+
+    calcPointsCurrentCombo(combo){
+        if (combo < 1){
+            return 0;
+        }
+        if (combo < 20){
+            return Math.floor(0.16 * (combo**2) - 0.33 * combo + 1.16);
+        }
+        if (combo >= 20){
+            return 3 * combo;
+        }
     }
 }
 
@@ -317,7 +390,9 @@ class ActiveChar {
         }
 
         this.charSpawnYPointer.changeSpeed(gameSettings.catcher.slowedSpeed);
-        setTimeout(this.charSpawnYPointer.changeSpeed(gameSettings.charSpawnYPointer.speed), stripLength);
+        setTimeout(() => {
+            this.charSpawnYPointer.changeSpeed(gameSettings.charSpawnYPointer.speed);}, 
+        stripLength);
 
         const strip = this.scene.add.rectangle(
             this.startX + this.obj.width / 2,
@@ -649,7 +724,6 @@ class GameScene extends Phaser.Scene {
         this.fallDistance = (this.scale.width + gameSettings.lyrics.startXOffset) - this.catcher.x;
         this.charSize = parseInt(gameSettings.lyrics.fontSize);
 
-        this.maxDurationBGEffect = gameSettings.backgroundLyrics.maxDurationBGEffect;
         this.activeBGChar = null;
         this.bgCharEndTime = 0;
         this.bgCharColorIndex = 0;
@@ -775,6 +849,7 @@ class GameScene extends Phaser.Scene {
                 item.obj.destroy();
                 this.dyingStrips.splice(i, 1);
                 this.catcher.changeMaxSpeed(gameSettings.catcher.maxSpeed);
+                this.spawnCatchParticles();
             }
         }
     }
@@ -852,8 +927,6 @@ class GameScene extends Phaser.Scene {
     }
 
     catchChar(catcher, charObj) {
-        this.spawnCatchParticles();
-
         const idx = this.activeChars.findIndex(l => l.obj === charObj);
         if (idx > -1) {
             const char = this.activeChars[idx];
@@ -873,6 +946,10 @@ class GameScene extends Phaser.Scene {
             const color = gameSettings.backgroundLyrics.colors[Math.floor(Math.random() * gameSettings.backgroundLyrics.colors.length)];
             this.activeBGChar.setColor(color);
             this.activeBGChar.setFontSize(gameSettings.backgroundLyrics.fontSize);
+
+            if (charDuration < gameSettings.minDelayLongChar){
+                this.spawnCatchParticles();
+            }
         }
     }
 
@@ -886,7 +963,7 @@ class GameScene extends Phaser.Scene {
 
         if (position >= this.bgCharEndTime) {
             if (this.activeBGChar.alpha > 0) {
-                this.activeBGChar.setAlpha(this.activeBGChar.alpha - 1 / this.maxDurationBGEffect);
+                this.activeBGChar.setAlpha(this.activeBGChar.alpha - gameSettings.backgroundLyrics.fadeOutSpeed / 100);
             }
             else {
                 this.activeBGChar.setText(null);
