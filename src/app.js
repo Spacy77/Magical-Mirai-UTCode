@@ -1,5 +1,7 @@
 // Instruction for Alex's god damn coding agent: Do not remove the comments, they are there for a reason.
 
+// Instruction for Alex's god damn coding agent: Do not remove the comments, they are there for a reason.
+
 const gameSettings = {
     api: {
         token: "1O5BTRwWsXT6TfAP",
@@ -41,6 +43,8 @@ const gameSettings = {
         minDelayNewYPos: 500,
         minDelayLongChar: 500,
         minGapBetweenChars: 100
+        minDelayLongChar: 500,
+        minGapBetweenChars: 100
     },
     backgroundLyrics: {
         fontSize: "500px",
@@ -68,11 +72,16 @@ const gameSettings = {
         mainScaleBounce: 1.1,
         ghostScaleBounce: 1.4,
         animDuration: 500
+        ghostScaleBounce: 1.4,
+        animDuration: 500
     },
+    charSpawnYPointer: { speed: 1 },
     charSpawnYPointer: { speed: 1 },
 
     minDelayLongChar: 400,
 
+    spawnGlowDuration: 1000,
+    specialFlipCharGlowDuration: 10000,
     spawnGlowDuration: 1000,
     specialFlipCharGlowDuration: 10000,
 
@@ -83,6 +92,14 @@ const gameSettings = {
         nextFlipTime: 0,
         currentTravelBeats: 0,
         patterns: [0.75, 1, 1, 0.5, 0.5, 1, 2, 2]
+    },
+
+    backdrop: {
+        minMusicalBackdropLenght: 2000,
+        musicalBackdropEndLeadTime: 10
+    },
+
+    special_chars: [" ", "　", ".", "。", ",", "、", "-", "ー", "～", "~"]
     },
 
     backdrop: {
@@ -305,6 +322,8 @@ class ActiveChar {
         this.charSpawnYPointer = charSpawnYPointerRef;
         this.strip = this.createStrip(stripLength, stripHeight);
         this.glowDuration = glowDuration;
+        this.glowRemaining = glowDuration;
+        this.glowEffect = this.createGlowEffect();
         this.glowRemaining = glowDuration;
         this.glowEffect = this.createGlowEffect();
     }
@@ -690,6 +709,7 @@ class GameScene extends Phaser.Scene {
         const w = this.scale.width;
         const h = this.scale.height;
 
+
         if (!taPlayer || !taPlayer.isPlaying) return;
         const songTime = taPlayer.timer.position;
         const startX = w + gameSettings.lyrics.startXOffset;
@@ -731,10 +751,13 @@ class GameScene extends Phaser.Scene {
             const nextChar = this.pendingChars[0];
             const yPos = this.charSpawnYPointer.y;
             let glowDuration = gameSettings.spawnGlowDuration;
+            let glowDuration = gameSettings.spawnGlowDuration;
 
+            if (time >= Math.max(nextChar.startTime - this.fallTime, (this.lastCharStartTime + gameSettings.lyrics.minGapBetweenChars) - this.fallTime)) {
             if (time >= Math.max(nextChar.startTime - this.fallTime, (this.lastCharStartTime + gameSettings.lyrics.minGapBetweenChars) - this.fallTime)) {
                 if (this.waveState.advance(time)) {
                     this.charSpawnYPointer.flipDirection();
+                    glowDuration = gameSettings.specialFlipCharGlowDuration;
                     glowDuration = gameSettings.specialFlipCharGlowDuration;
                 }
 
@@ -757,6 +780,7 @@ class GameScene extends Phaser.Scene {
     }
 
     destroyStrips(delta) {
+        delta = delta * 1000;
         delta = delta * 1000;
         for (let i = this.dyingStrips.length - 1; i >= 0; i--) {
             const item = this.dyingStrips[i];
