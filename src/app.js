@@ -850,6 +850,7 @@ class GameScene extends Phaser.Scene {
 
     catchChar(catcher, charObj) {
         this.spawnCatchParticles();
+        this.spawnCatchParticles();
 
         const idx = this.activeChars.findIndex(l => l.obj === charObj);
         if (idx > -1) {
