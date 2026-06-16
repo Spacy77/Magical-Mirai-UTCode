@@ -20,16 +20,17 @@ const gameSettings = {
     },
     spinner: { radius: 50, thickness: 8, rotationSpeed: 0.1 },
     button: { width: 250, height: 80, fontSize: "40px" },
-    catcher: { xPos: 120, width: 40, height: 300, maxSpeed: 1, responsiveness: 5.0, marginY: 80 }, 
+    catcher: { xPos: 120, width: 40, height: 300, maxSpeed: 1, responsiveness: 5.0, marginY: 80 },
     lyrics: {
-        fallTimeMs: 1000,
+        fallTimeMs: 1500,
         fallTimeMsMultiplier: 1,
         startXOffset: 100,
         marginY: 100,
         fontSize: "120px",
         destroyOverflowRatio: 0.2,
         minDelayNewYPos: 500,
-        minDelayLongChar: 500
+        minDelayLongChar: 500,
+        specialChars: ["。", "、", "・", "：", "；", "？", "！", "〜", "～", "…", "‥", "ー", "―", "‐", "「", "」", "『", "』", "（", "）", "［", "］", "｛", "｝", "〈", "〉", "《", "》", "【", "】", "〔", "〕", "＜", "＞", "《", "》", "〝", "〟", "〃"]
     },
     backgroundLyrics: {
         fontSize: "500px",
@@ -54,10 +55,10 @@ const gameSettings = {
         color: "#ffffff",
         ghostAlpha: 0.2,
         mainScaleBounce: 1.1,
-        ghostScaleBounce: 1.4, 
-        animDuration: 500 
+        ghostScaleBounce: 1.4,
+        animDuration: 500
     },
-    charSpawnYPointer: { speed: 1 }, 
+    charSpawnYPointer: { speed: 1 },
 
     minDelayLongChar: 400,
 
@@ -70,6 +71,23 @@ const gameSettings = {
         nextFlipTime: 0,
         currentTravelBeats: 0,
         patterns: [0.75, 1, 1, 0.5, 0.5, 1, 2, 2]
+    },
+
+    FLBackground: {
+        bgColor: 0x434b55, // "#434b55"
+        topBarColor: 0x2f353c, // "#2f353c"
+        majorLineColor: 0x252a30,
+        minorLineColor: 0x39414a,
+        textColor: "#d4d8dc",
+        topBarHeight: 36,
+        majorSpacing: 160,
+        subdivisions: 4,
+    },
+
+    heartMode: {
+        heartAmount: 6,
+        minSize: 30,
+        maxSize: 60,
     }
 };
 
@@ -357,6 +375,336 @@ class ActiveChar {
     }
 }
 
+class FLTimelineBackground extends Phaser.GameObjects.Container {
+
+    constructor(scene, width, height) {
+        super(scene, 0, 0);
+
+        this.width = width;
+        this.height = height;
+
+        this.scrollX = 0;
+
+        this.graphics = scene.add.graphics();
+        this.labels = [];
+
+        this.add(this.graphics);
+
+        scene.add.existing(this);
+
+        this.redraw();
+    }
+
+    update(songTime, startX, catcherX, fallTime) {
+        // copied from the ActiveChar logic
+
+        const pixelsPerMs = (startX - catcherX) / (fallTime);
+
+        this.scrollX = songTime * pixelsPerMs;
+        this.redraw();
+    }
+
+    redraw() {
+        const g = this.graphics;
+
+        g.clear();
+
+        // Main background
+        g.fillStyle(gameSettings.FLBackground.bgColor);
+        g.fillRect(0, 0, this.width, this.height);
+
+        // Remove old labels
+        for (const label of this.labels) {
+            label.destroy();
+        }
+        this.labels.length = 0;
+
+        const minorSpacing = gameSettings.FLBackground.majorSpacing / gameSettings.FLBackground.subdivisions;
+
+        // Align grid so it loops infinitely
+        const offset = this.scrollX % gameSettings.FLBackground.majorSpacing;
+
+        // Minor grid lines
+        g.lineStyle(1, gameSettings.FLBackground.minorLineColor, 1);
+
+
+
+        for (
+            let x = -offset;
+            x < this.width + gameSettings.FLBackground.majorSpacing;
+            x += minorSpacing
+        ) {
+            g.beginPath();
+            g.moveTo(x, this.topBarHeight);
+            g.lineTo(x, this.height);
+            g.strokePath();
+        }
+
+        // Major grid lines + labels
+        g.lineStyle(2, gameSettings.FLBackground.majorLineColor, 1);
+
+        const firstMeasure =
+            Math.floor(this.scrollX / gameSettings.FLBackground.majorSpacing);
+
+        let measure = firstMeasure + 1;
+
+        // Top ruler bar
+        g.fillStyle(gameSettings.FLBackground.topBarColor);
+        g.fillRect(0, 0, this.width, this.topBarHeight);
+
+
+        for (
+            let x = -offset;
+            x < this.width + gameSettings.FLBackground.majorSpacing;
+            x += gameSettings.FLBackground.majorSpacing
+        ) {
+            g.beginPath();
+            g.moveTo(x, 0);
+            g.lineTo(x, this.height);
+            g.strokePath();
+
+            const label = this.scene.add.text(
+                x + 8,
+                8,
+                String(measure),
+                {
+                    fontFamily: "Arial",
+                    fontSize: "16px",
+                    color: gameSettings.FLBackground.textColor
+                }
+            );
+
+            this.labels.push(label);
+            this.add(label);
+
+            measure++;
+        }
+
+        // Bottom border of ruler bar
+        g.lineStyle(2, 0x1f2328, 1);
+
+        g.beginPath();
+        g.moveTo(0, this.topBarHeight);
+        g.lineTo(this.width, this.topBarHeight);
+        g.strokePath();
+    }
+
+    destroy(fromScene) {
+        for (const label of this.labels) {
+            label.destroy();
+        }
+
+        this.graphics.destroy();
+
+        super.destroy(fromScene);
+    }
+}
+
+class BackgroundChar {
+
+    constructor(scene) {
+        this.scene = scene;
+
+        this.startTime = 0;
+        this.endTime = 0;
+        this.colorIndex = 0;
+
+        this.text = scene.add.text(
+            scene.scale.width / 2,
+            scene.scale.height / 2,
+            "",
+            {
+                fontFamily: gameSettings.fonts.main,
+                fontSize: gameSettings.backgroundLyrics.fontSize,
+                color: gameSettings.backgroundLyrics.colors[0]
+            }
+        )
+            .setOrigin(0.5)
+            .setAlpha(0)
+            .setDepth(-1);
+    }
+    isHeart(text) {
+        return [
+            "❤",
+            "♥",
+            "♡",
+            "♡"
+        ].includes(text);
+    }
+
+    enterHeartMode() {
+        this.heartMode = true;
+
+        this.text.setAlpha(0);
+        this.bigHeart.setAlpha(1);
+        this.bigHeart.setScale(1);
+
+        const w = this.scene.scale.width;
+        const h = this.scene.scale.height;
+
+        for (const heart of this.hearts) {
+            heart.destroy();
+        }
+
+        this.hearts.length = 0;
+
+        for (let i = 0; i < gameSettings.heartMode.heartAmount; i++) {
+
+            const size = Phaser.Math.Between(gameSettings.heartMode.minSize, gameSettings.heartMode.maxSize);
+
+            const heart = this.scene.add.text(
+                Phaser.Math.Between(0, w),
+                Phaser.Math.Between(0, h),
+                "❤",
+                {
+                    fontSize: `${size}px`,
+                    color: "#ff6b8a"
+                }
+            )
+                .setOrigin(0.5)
+                .setDepth(-2)
+                .setAlpha(0.2 + Math.random() * 0.4);
+
+            heart.baseScale = 0.6 + Math.random() * 0.8;
+            heart.phase = Math.random() * Math.PI * 2;
+            heart.floatSpeed = 10 + Math.random() * 20;
+
+            this.hearts.push(heart);
+        }
+    }
+
+    exitHeartMode() {
+        this.heartMode = false;
+
+        this.bigHeart.setAlpha(0);
+
+        for (const heart of this.hearts) {
+            heart.destroy();
+        }
+
+        this.hearts.length = 0;
+    }
+
+    show(charText, duration, currentTime) {
+        this.startTime = currentTime;
+        this.endTime = currentTime + duration;
+
+        if (this.isHeart(charText)) {
+            this.enterHeartMode();
+            return;
+        }
+
+        this.exitHeartMode();
+
+        this.text.setText(charText);
+        this.text.setAlpha(
+            gameSettings.backgroundLyrics.startAlpha
+        );
+
+        this.colorIndex =
+            (this.colorIndex + 1) % gameSettings.backgroundLyrics.colors.length;
+
+        const color = gameSettings.backgroundLyrics.colors[Math.floor(Math.random() * gameSettings.backgroundLyrics.colors.length)];
+
+        this.text.setColor(color);
+
+        this.text.setFontSize(
+            gameSettings.backgroundLyrics.fontSize
+        );
+    }
+
+    updateHeartMode(currentTime) {
+        const t = currentTime / 1000;
+
+        const beat =
+            1 +
+            Math.sin(t * 12) * 0.12 +
+            Math.max(0, Math.sin(t * 6)) * 0.2;
+
+        this.bigHeart.setScale(beat);
+
+        for (const heart of this.hearts) {
+
+            heart.y -= heart.floatSpeed * 0.016;
+
+            if (heart.y < -100) {
+                heart.y =
+                    this.scene.scale.height + 100;
+            }
+
+            const scale =
+                heart.baseScale +
+                Math.sin(
+                    t * 2 +
+                    heart.phase
+                ) * 0.1;
+
+            heart.setScale(scale);
+        }
+
+        // start fading down
+        if (currentTime >= this.endTime) {
+            const alpha =
+                Math.max(
+                    0,
+                    this.bigHeart.alpha - 0.01
+                );
+
+            this.bigHeart.setAlpha(alpha);
+
+            for (const heart of this.hearts) {
+                heart.setAlpha(alpha * 0.5);
+            }
+
+            if (alpha <= 0) {
+                this.exitHeartMode();
+            }
+        }
+    }
+
+    update(currentTime) {
+
+        const animTime =
+            gameSettings.backgroundLyrics.maxDurationBGAnim;
+
+        if (this.heartMode) {
+            this.updateHeartMode(currentTime)
+            return;
+        }
+
+
+        if (currentTime >= this.endTime) {
+
+            if (this.text.alpha > 0) {
+                this.text.setAlpha(
+                    this.text.alpha -
+                    1 / gameSettings.backgroundLyrics.maxDurationBGEffect
+                );
+            }
+            else {
+                this.text.setText("");
+            }
+
+            return;
+        }
+
+        if (currentTime <= this.startTime + animTime) {
+
+            const currentSize =
+                parseInt(this.text.style.fontSize);
+
+            this.text.setFontSize(
+                currentSize +
+                gameSettings.backgroundLyrics.sizeChangeCoeff
+            );
+        }
+    }
+
+    destroy() {
+        this.text.destroy();
+    }
+}
+
 class LoadScene extends Phaser.Scene {
     constructor() { super("LoadScene"); }
     create() {
@@ -418,10 +766,7 @@ class GameScene extends Phaser.Scene {
         this.fallDistance = (this.scale.width + gameSettings.lyrics.startXOffset) - this.catcher.x;
         this.charSize = parseInt(gameSettings.lyrics.fontSize);
 
-        this.maxDurationBGEffect = gameSettings.backgroundLyrics.maxDurationBGEffect;
-        this.activeBGChar = null;
-        this.bgCharEndTime = 0;
-        this.bgCharColorIndex = 0;
+        this.backgroundChar = new BackgroundChar(this);
 
         this.charSpawnYPointer = new CharSpawnYPointer(
             this.scale.height / 2
@@ -470,26 +815,30 @@ class GameScene extends Phaser.Scene {
         this.scale.on('resize', (gameSize) => {
             this.comboCounter.resize(gameSize.height);
         });
+
+        this.FLBackground = new FLTimelineBackground(this, this.scale.width, this.scale.height);
+        this.FLBackground.setDepth(-10000);
     }
 
     update(time, delta) {
         this.fpsText.setText("FPS: " + Math.round(this.game.loop.actualFps));
 
-        delta = delta / 1000; 
+        delta = delta / 1000;
         const w = this.scale.width;
         const h = this.scale.height;
-        
+
         if (!taPlayer || !taPlayer.isPlaying) return;
         const songTime = taPlayer.timer.position;
         const startX = w + gameSettings.lyrics.startXOffset;
 
+        this.FLBackground.update(songTime, startX, this.catcher.x, this.fallTime);
         this.catcher.update(delta, h);
         this.spawnPointerGraphics.y = this.charSpawnYPointer.y;
         this.charSpawnYPointer.update(delta, h);
         this.spawnPendingChars(songTime, startX, w, h);
         this.updateActiveChars(songTime, startX, delta);
         this.destroyStrips(delta);
-        this.updateBGChar();
+        this.backgroundChar.update(taPlayer.timer.position);
     }
 
     spawnPendingChars(time, startX, sceneWidth, sceneHeight) {
@@ -505,7 +854,13 @@ class GameScene extends Phaser.Scene {
                     glowOnSpawn = true;
                 }
 
-                const charObj = this.add.text(startX, this.charSpawnYPointer.y, nextChar.text, {
+                let textToRender = nextChar.text;
+                if (this.pendingChars.length > 1 && nextChar.next.text in gameSettings.lyrics.specialChars) {
+                    this.pendingChars.shift();
+                    textToRender += nextChar.next.text;
+                }
+
+                const charObj = this.add.text(startX, this.charSpawnYPointer.y, textToRender, {
                     fontFamily: gameSettings.fonts.main,
                     fontSize: gameSettings.lyrics.fontSize,
                     color: gameSettings.colors.textMain
@@ -523,7 +878,7 @@ class GameScene extends Phaser.Scene {
     }
 
     destroyStrips(delta) {
-        delta = delta * 1000; 
+        delta = delta * 1000;
         for (let i = this.dyingStrips.length - 1; i >= 0; i--) {
             const item = this.dyingStrips[i];
 
@@ -559,20 +914,18 @@ class GameScene extends Phaser.Scene {
             const char = this.activeChars[idx];
             this.activeChars.splice(idx, 1);
             char.retire(this.dyingStrips, this.fallDistance, this.fallTime);
-            
+
             this.comboCounter.increment();
 
-            const charDuration = char.char.endTime - char.char.startTime;
-            this.bgCharStartTime = taPlayer.timer.position;
-            this.bgCharEndTime = taPlayer.timer.position + charDuration;
+            const charDuration =
+                char.char.endTime -
+                char.char.startTime;
 
-            this.activeBGChar.setText(charObj.text);
-            this.activeBGChar.setAlpha(gameSettings.backgroundLyrics.startAlpha);
-
-            this.bgCharColorIndex = (this.bgCharColorIndex + 1) % gameSettings.backgroundLyrics.colors.length;
-            const color = gameSettings.backgroundLyrics.colors[Math.floor(Math.random() * gameSettings.backgroundLyrics.colors.length)];
-            this.activeBGChar.setColor(color);
-            this.activeBGChar.setFontSize(gameSettings.backgroundLyrics.fontSize);
+            this.backgroundChar.show(
+                charObj.text,
+                charDuration,
+                taPlayer.timer.position
+            );
         }
     }
 
