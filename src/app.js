@@ -3,6 +3,7 @@ const gameSettings = {
         token: "1O5BTRwWsXT6TfAP",
         songUrl: "https://piapro.jp/t/B3yJ/20251215061727"
     },
+    songVolume: 10,
     colors: {
         background: "#111111",
         primary: 0x8A2BE2,
@@ -14,6 +15,16 @@ const gameSettings = {
         strip: 0xCCCCCC,
         pointer: 0x00FFFF
     },
+
+    phraseColors: [
+        0xFFFFFF, // "#FFFFFF", // white
+        0x7DD3FC, // "#7DD3FC", // light blue
+        0xA7F3D0, // "#A7F3D0", // mint
+        0xFDE68A, // "#FDE68A", // soft yellow
+        0xF9A8D4, // "#F9A8D4", // pink
+        0xC4B5FD, // "#C4B5FD", // lavender
+        0xFDBA74, // "#FDBA74", // orange
+    ],
     fonts: {
         main: '"Noto Sans JP", sans-serif',
         ui: 'sans-serif'
@@ -30,7 +41,13 @@ const gameSettings = {
         destroyOverflowRatio: 0.2,
         minDelayNewYPos: 500,
         minDelayLongChar: 500,
-        specialChars: ["。", "、", "・", "：", "；", "？", "！", "〜", "～", "…", "‥", "ー", "―", "‐", "「", "」", "『", "』", "（", "）", "［", "］", "｛", "｝", "〈", "〉", "《", "》", "【", "】", "〔", "〕", "＜", "＞", "《", "》", "〝", "〟", "〃"]
+        trailingChars: [
+            "、", "。", "！", "？", "」", "』", "）", "］", "】", "〉", "》"
+        ],
+
+        leadingChars: [
+            "「", "『", "（", "［", "【", "〈", "《"
+        ],
     },
     backgroundLyrics: {
         fontSize: "500px",
@@ -448,10 +465,6 @@ class FLTimelineBackground extends Phaser.GameObjects.Container {
 
         let measure = firstMeasure + 1;
 
-        // Top ruler bar
-        g.fillStyle(gameSettings.FLBackground.topBarColor);
-        g.fillRect(0, 0, this.width, this.topBarHeight);
-
 
         for (
             let x = -offset;
@@ -479,6 +492,10 @@ class FLTimelineBackground extends Phaser.GameObjects.Container {
 
             measure++;
         }
+
+        // Top ruler bar
+        g.fillStyle(gameSettings.FLBackground.topBarColor);
+        g.fillRect(0, 0, this.width, this.topBarHeight);
 
         // Bottom border of ruler bar
         g.lineStyle(2, 0x1f2328, 1);
@@ -522,7 +539,25 @@ class BackgroundChar {
             .setOrigin(0.5)
             .setAlpha(0)
             .setDepth(-1);
+
+        this.heartMode = false;
+
+        this.bigHeart = scene.add.text(
+            scene.scale.width / 2,
+            scene.scale.height / 2,
+            "❤",
+            {
+                fontSize: "250px",
+                color: "#ff4040"
+            }
+        )
+            .setOrigin(0.5)
+            .setAlpha(0)
+            .setDepth(-1);
+
+        this.hearts = [];
     }
+
     isHeart(text) {
         return [
             "❤",
@@ -841,7 +876,17 @@ class GameScene extends Phaser.Scene {
         this.backgroundChar.update(taPlayer.timer.position);
     }
 
+    getPhraseColor(char) {
+        const phrase = char.parent?.parent;
+
+        const index = this.player.video.findIndex(phrase);
+
+        return phraseColors[index % phraseColors.length];
+    }
+
     spawnPendingChars(time, startX, sceneWidth, sceneHeight) {
+        let lastSpawnedObj = null;
+
         while (this.pendingChars.length > 0) {
             const nextChar = this.pendingChars[0];
             const yPos = this.charSpawnYPointer.y;
@@ -855,21 +900,60 @@ class GameScene extends Phaser.Scene {
                 }
 
                 let textToRender = nextChar.text;
-                if (this.pendingChars.length > 1 && nextChar.next.text in gameSettings.lyrics.specialChars) {
-                    this.pendingChars.shift();
-                    textToRender += nextChar.next.text;
+
+                // Prevent punctuation from spawning directly on top of the next character.
+                let spawnX = startX;
+                let spawnY = this.charSpawnYPointer.y;
+
+                // Closing punctuation: attach to previous character.
+                if (
+                    trailingChars.includes(textToRender) &&
+                    this.activeChars.length > 0
+                ) {
+                    const previousObj =
+                        this.activeChars[this.activeChars.length - 1].obj;
+
+                    spawnX = previousObj.x + previousObj.width;
+                    spawnY = previousObj.y;
                 }
 
-                const charObj = this.add.text(startX, this.charSpawnYPointer.y, textToRender, {
-                    fontFamily: gameSettings.fonts.main,
-                    fontSize: gameSettings.lyrics.fontSize,
-                    color: gameSettings.colors.textMain
-                }).setOrigin(0.5);
+                // Opening punctuation: shift slightly left so that the
+                // next character visually follows it.
+                else if (leadingChars.includes(textToRender)) {
+                    spawnX -= gameSettings.lyrics.fontSize * 0.35;
+                }
 
-                const stripLength = nextChar.endTime - nextChar.startTime - this.charSize;
+                const charObj = this.add.text(
+                    spawnX,
+                    spawnY,
+                    textToRender,
+                    {
+                        fontFamily: gameSettings.fonts.main,
+                        fontSize: gameSettings.lyrics.fontSize,
+                        color: this.getPhraseColor(nextChar)
+                    }
+                ).setOrigin(0.5);
+
+                const stripLength =
+                    nextChar.endTime - nextChar.startTime - this.charSize;
 
                 this.charGroup.add(charObj);
-                this.activeChars.push(new ActiveChar(this, nextChar, charObj, startX, yPos, stripLength, this.charSize / 5, glowOnSpawn, gameSettings.spawnGlowDuration));
+
+                this.activeChars.push(
+                    new ActiveChar(
+                        this,
+                        nextChar,
+                        charObj,
+                        spawnX,
+                        spawnY,
+                        stripLength,
+                        this.charSize / 5,
+                        glowOnSpawn,
+                        gameSettings.spawnGlowDuration
+                    )
+                );
+
+                lastSpawnedObj = charObj;
                 this.pendingChars.shift();
             } else {
                 break;
@@ -980,5 +1064,6 @@ const config = {
 const game = new Phaser.Game(config);
 
 const taPlayer = new Player({ app: { token: gameSettings.api.token }, mediaElement: document.querySelector("#media") });
+taPlayer.video.volume = gameSettings.songVolume;
 taPlayer.addListener({ onTimerReady() { isTextAliveReady = true; } });
 taPlayer.createFromSongUrl(gameSettings.api.songUrl);
