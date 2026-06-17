@@ -3,7 +3,7 @@ const gameSettings = {
         token: "1O5BTRwWsXT6TfAP",
         songUrl: "https://piapro.jp/t/B3yJ/20251215061727"
     },
-    songVolume: 10,
+    songVolume: 0,
     colors: {
         background: "#111111",
         primary: 0x8A2BE2,
@@ -16,14 +16,29 @@ const gameSettings = {
         pointer: 0x00FFFF
     },
 
+    tintCycle: [
+        1.00,
+        0.90,
+        1.10,
+        0.95,
+        1.05,
+    ],
+
     phraseColors: [
-        0xFFFFFF, // "#FFFFFF", // white
-        0x7DD3FC, // "#7DD3FC", // light blue
-        0xA7F3D0, // "#A7F3D0", // mint
-        0xFDE68A, // "#FDE68A", // soft yellow
-        0xF9A8D4, // "#F9A8D4", // pink
-        0xC4B5FD, // "#C4B5FD", // lavender
-        0xFDBA74, // "#FDBA74", // orange
+        "#FFFFFF",
+        "#7DD3FC",
+        "#A7F3D0",
+        "#FDE68A",
+        "#F9A8D4",
+        "#C4B5FD",
+        "#FDBA74",
+        //0xFFFFFF,
+        //0x7DD3FC,
+        //0xA7F3D0,
+        //0xFDE68A,
+        //0xF9A8D4,
+        //0xC4B5FD,
+        //0xFDBA74,
     ],
     fonts: {
         main: '"Noto Sans JP", sans-serif',
@@ -108,7 +123,7 @@ const gameSettings = {
     }
 };
 
-const { Player } = TextAliveApp;
+const { Player, PlayerOptions } = TextAliveApp;
 let isTextAliveReady = false;
 
 class ComboCounter {
@@ -814,7 +829,10 @@ class GameScene extends Phaser.Scene {
         this.spawnPointerGraphics.x = this.scale.width - 50;
         this.spawnPointerGraphics.y = this.charSpawnYPointer.y;
 
-        if (taPlayer && taPlayer.video) this.loadLyrics(taPlayer.video.firstChar);
+        if (taPlayer && taPlayer.video) {
+            this.loadLyrics(taPlayer.video.firstChar);
+            taPlayer.volume = gameSettings.songVolume;
+        }
 
         this.fpsText = this.add.text(10, 10, "FPS: 0", {
             fontFamily: gameSettings.fonts.ui,
@@ -876,12 +894,27 @@ class GameScene extends Phaser.Scene {
         this.backgroundChar.update(taPlayer.timer.position);
     }
 
-    getPhraseColor(char) {
-        const phrase = char.parent?.parent;
+    getCharColor(char) {
+        // gives color variation depending on parent phrase and parent word to destinguish them from each others
+        const word = char.parent;
+        const phrase = word?.parent;
 
-        const index = this.player.video.findIndex(phrase);
+        if (!phrase) {
+            return gameSettings.colors.textMain;
+        }
 
-        return phraseColors[index % phraseColors.length];
+        const phraseIndex = taPlayer.video.phrases.indexOf(phrase);
+
+        const phraseColor =
+            gameSettings.phraseColors[phraseIndex % gameSettings.phraseColors.length];
+
+        const wordIndex = phrase.children.indexOf(word);
+
+
+        const tint =
+            gameSettings.tintCycle[wordIndex % gameSettings.tintCycle.length];
+
+        return this.tintColor(phraseColor, tint);
     }
 
     spawnPendingChars(time, startX, sceneWidth, sceneHeight) {
@@ -907,7 +940,7 @@ class GameScene extends Phaser.Scene {
 
                 // Closing punctuation: attach to previous character.
                 if (
-                    trailingChars.includes(textToRender) &&
+                    gameSettings.lyrics.trailingChars.includes(textToRender) &&
                     this.activeChars.length > 0
                 ) {
                     const previousObj =
@@ -919,7 +952,7 @@ class GameScene extends Phaser.Scene {
 
                 // Opening punctuation: shift slightly left so that the
                 // next character visually follows it.
-                else if (leadingChars.includes(textToRender)) {
+                else if (gameSettings.lyrics.leadingChars.includes(textToRender)) {
                     spawnX -= gameSettings.lyrics.fontSize * 0.35;
                 }
 
@@ -930,7 +963,7 @@ class GameScene extends Phaser.Scene {
                     {
                         fontFamily: gameSettings.fonts.main,
                         fontSize: gameSettings.lyrics.fontSize,
-                        color: this.getPhraseColor(nextChar)
+                        color: this.getCharColor(nextChar)
                     }
                 ).setOrigin(0.5);
 
@@ -959,6 +992,34 @@ class GameScene extends Phaser.Scene {
                 break;
             }
         }
+    }
+
+    hexToRgb(hex) {
+        hex = hex.replace("#", "");
+
+        return {
+            r: parseInt(hex.substring(0, 2), 16),
+            g: parseInt(hex.substring(2, 4), 16),
+            b: parseInt(hex.substring(4, 6), 16),
+        };
+    }
+
+    rgbToHex(r, g, b) {
+        return "#" +
+            [r, g, b]
+                .map(v => Math.max(0, Math.min(255, Math.round(v))))
+                .map(v => v.toString(16).padStart(2, "0"))
+                .join("");
+    }
+
+    tintColor(hex, factor) {
+        const rgb = this.hexToRgb(hex);
+
+        return this.rgbToHex(
+            rgb.r * factor,
+            rgb.g * factor,
+            rgb.b * factor
+        );
     }
 
     destroyStrips(delta) {
@@ -1062,8 +1123,7 @@ const config = {
 };
 
 const game = new Phaser.Game(config);
+const taPlayer = new Player({ app: { token: gameSettings.api.token }, mediaElement: document.querySelector("#media"), valenceArousalEnabled: true, vocalAmplitudeEnabled: true });
 
-const taPlayer = new Player({ app: { token: gameSettings.api.token }, mediaElement: document.querySelector("#media") });
-taPlayer.video.volume = gameSettings.songVolume;
 taPlayer.addListener({ onTimerReady() { isTextAliveReady = true; } });
 taPlayer.createFromSongUrl(gameSettings.api.songUrl);
