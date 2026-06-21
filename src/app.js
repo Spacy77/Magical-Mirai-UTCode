@@ -1,126 +1,226 @@
 const gameSettings = {
+    // ── TextAlive API ────────────────────────────────────────────────────────
     api: {
         token: "1O5BTRwWsXT6TfAP",
-        songUrl: "https://piapro.jp/t/B3yJ/20251215061727"
+        songUrl: "https://piapro.jp/t/B3yJ/20251215061727" // go to textAlive website to find the link, it is not directly on piapro
     },
-    songVolume: 0,
+    // Volume sent to the TextAlive player (0–100)
+    songVolume: 10,
+
+    // ── Global palette ───────────────────────────────────────────────────────
     colors: {
-        background: "#111111",
-        primary: 0x8A2BE2,
-        primaryHover: 0x6A1B9A,
-        textMain: "#E0E0E0",
-        textLight: "#FFFFFF",
-        textPrimary: "#8A2BE2",
-        glow: 0x00FFFF,
-        strip: 0xCCCCCC,
-        pointer: 0x00FFFF
+        background: "#111111",   // scene background fill
+        primary: 0x8A2BE2,       // accent color used for UI elements (purple)
+        primaryHover: 0x6A1B9A,  // darker shade for button hover state
+        textMain: "#E0E0E0",     // default fallback color for characters without phrase context
+        textLight: "#FFFFFF",    // pure-white text (titles, labels)
+        textPrimary: "#8A2BE2",  // purple text used in the UI
+        pointer: 0x00FFFF        // spawn-Y pointer dot color (cyan)
     },
 
+    // ── Character color system ───────────────────────────────────────────────
+    // Each phrase gets a base color from phraseColors; within a phrase each word
+    // is multiplied by a factor from tintCycle to create brightness variety.
+
+    // Brightness multipliers applied per-word within a phrase (cycled).
+    // Values below 1 darken, above 1 brighten the phrase base color.
     tintCycle: [
-        1.00,
-        0.90,
-        1.10,
-        0.95,
-        1.05,
+        1.00,  // neutral
+        0.80,  // slightly darker
+        1.20,  // slightly brighter
+        0.90,  // mild dark
+        0.65,  // noticeably darker
     ],
 
+    // Base colors assigned to successive phrases (cycled if there are more phrases than entries)
     phraseColors: [
-        "#FFFFFF",
-        "#7DD3FC",
-        "#A7F3D0",
-        "#FDE68A",
-        "#F9A8D4",
-        "#C4B5FD",
-        "#FDBA74",
-        //0xFFFFFF,
-        //0x7DD3FC,
-        //0xA7F3D0,
-        //0xFDE68A,
-        //0xF9A8D4,
-        //0xC4B5FD,
-        //0xFDBA74,
+        "#FFFFFF",  // white
+        "#7DD3FC",  // sky blue
+        "#A7F3D0",  // mint green
+        "#FDE68A",  // warm yellow
+        "#F9A8D4",  // pink
+        "#C4B5FD",  // lavender
+        "#FDBA74",  // peach
     ],
+
+    // ── Fonts ────────────────────────────────────────────────────────────────
     fonts: {
-        main: '"Noto Sans JP", sans-serif',
-        ui: 'sans-serif'
+        main: '"Noto Sans JP", sans-serif',  // lyric characters (supports Japanese glyphs)
+        ui: 'sans-serif'                      // combo counter and other HUD text
     },
-    spinner: { radius: 50, thickness: 8, rotationSpeed: 0.1 },
+
+    // ── Loading screen spinner ───────────────────────────────────────────────
+    spinner: {
+        radius: 50,          // outer radius in px
+        thickness: 8,        // ring stroke width in px
+        rotationSpeed: 0.1   // radians per frame
+    },
+
+    // ── Menu buttons ─────────────────────────────────────────────────────────
     button: { width: 250, height: 80, fontSize: "40px" },
-    catcher: { xPos: 120, width: 40, height: 300, maxSpeed: 1, responsiveness: 5.0, marginY: 80 },
+
+    // ── Catcher (the vertical bar the player controls) ───────────────────────
+    catcher: {
+        xPos: 300,          // fixed X position from the left edge
+        width: 40,          // collision / visual width in px
+        height: 300,        // collision / visual height in px
+        maxSpeed: 1,        // maximum normalized speed (fraction of scene height per second)
+        responsiveness: 5.0, // exponential-smoothing factor : higher = snappier tracking
+        marginY: 80         // minimum distance the catcher keeps from the top/bottom edges
+    },
+
+    // ── Lyric characters ─────────────────────────────────────────────────────
     lyrics: {
-        fallTimeMs: 1500,
-        fallTimeMsMultiplier: 1,
-        startXOffset: 100,
-        marginY: 100,
-        fontSize: "120px",
+        fallTimeMs: 1700,          // time (ms) for a character to travel from spawn to the catcher
+        fallTimeMsMultiplier: 1,   // global speed multiplier applied on top of fallTimeMs (1 = default)
+        startXOffset: 100,         // how many px past the right edge characters spawn off-screen
+        marginY: 100,              // vertical safe zone : characters never spawn closer than this to the top/bottom
+        fontSize: "120px",         // CSS font-size used for all lyric text objects
+
+        // A character that has moved past the catcher by more than (destroyOverflowRatio × fallDistance)
+        // is removed even if it was never caught, preventing off-screen accumulation
         destroyOverflowRatio: 0.2,
+
+        // Minimum time gap (ms) between successive characters before a new Y position is allowed.
+        // Prevents the spawn pointer from jumping too often on rapid note sequences.
         minDelayNewYPos: 500,
+
+        // Characters whose on-screen duration (endTime - startTime) is shorter than this (ms)
+        // do not get a trailing strip, because the strip would be too small to be meaningful.
         minDelayLongChar: 500,
+
+        // Spacing : overlap prevention
+        minCharSpacing: 20,      // min horizontal pixel gap before triggering a vertical shift
+        overlapYShift: 80,       // vertical pixel offset applied to a character that would overlap the previous one
+        leadingCharShift: 0.35,  // fraction of fontSize to shift leading punctuation left so the next char follows it naturally
+
+        // Japanese closing punctuation : always attached directly to the right edge of the previous character
         trailingChars: [
             "、", "。", "！", "？", "」", "』", "）", "］", "】", "〉", "》"
         ],
 
+        // Japanese opening punctuation : shifted left so the body text starts after them
         leadingChars: [
             "「", "『", "（", "［", "【", "〈", "《"
         ],
     },
+
+    // ── Background large-character flash effect ───────────────────────────────
+    // When a character is caught, a giant version of it briefly appears behind the scene.
     backgroundLyrics: {
-        fontSize: "500px",
-        maxDurationBGEffect: 200,
-        maxDurationBGAnim: 100,
-        sizeChangeCoeff: 5,
-        colors: ["#D00000", "#FFB703", "#2A9D8F", "#3A86FF", "#8338EC"],
-        startAlpha: 0.5
+        fontSize: "500px",          // size of the background character
+        maxDurationBGEffect: 200,   // max time (ms) the effect stays fully visible
+        maxDurationBGAnim: 100,     // max time (ms) of the scale-in animation
+        sizeChangeCoeff: 5,         // how aggressively the size pulses during the animation
+        colors: ["#D00000", "#FFB703", "#2A9D8F", "#3A86FF", "#8338EC"],  // palette cycled per catch
+        startAlpha: 0.5             // initial opacity of the background character
     },
+
+    // ── Catch particle emitter (legacy / unused config : kept for reference) ─
+    // Actual catch particles use the `particles` block below; tint is set per-character at runtime.
     catchParticles: {
         speed: { min: 200, max: 400 },
         lifespan: { min: 300, max: 600 },
         quantity: 10,
         scale: { start: 0.2, end: 2 },
-        colors: [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff],
         alpha: { min: 0.1, max: 0.6 }
     },
+
+    // ── Combo counter HUD ────────────────────────────────────────────────────
     combo: {
-        xPos: 30,
-        yOffset: 20,
+        xPos: 30,              // X position of the combo text (from the left)
+        yOffset: 20,           // distance from the bottom edge
         fontSize: "100px",
         color: "#ffffff",
-        ghostAlpha: 0.2,
-        mainScaleBounce: 1.1,
-        ghostScaleBounce: 1.4,
-        animDuration: 500
+        ghostAlpha: 0.2,       // opacity of the ghost (echo) copy of the counter
+        mainScaleBounce: 1.1,  // scale the main counter briefly grows to on increment
+        ghostScaleBounce: 1.4, // scale the ghost briefly grows to on increment (more exaggerated)
+        animDuration: 500      // duration (ms) of the bounce-back tween
     },
-    charSpawnYPointer: { speed: 1 },
 
+    // ── Spawn-Y pointer ──────────────────────────────────────────────────────
+    // A moving point that drifts up and down; each new character spawns at its current Y.
+    charSpawnYPointer: {
+        speed: 1  // fraction of scene height traveled per second at full velocity
+    },
+
+    // Characters with an on-screen duration below this (ms) receive no strip.
+    // Duplicates lyrics.minDelayLongChar : used by ActiveChar directly before lyrics settings are parsed.
     minDelayLongChar: 400,
 
-    spawnGlowDuration: 50,
-
-    glow: { outerStrength: 10, innerStrength: 5, knockout: false },
-
+    // ── Wave / flip pattern ──────────────────────────────────────────────────
+    // The spawn pointer periodically reverses direction to create a wave motion.
+    // `patterns` is a list of beat-durations (in beats) the pointer travels in one direction
+    // before flipping; the list is cycled indefinitely.
     wave: {
-        beatDuration: 500,
-        nextFlipTime: 0,
-        currentTravelBeats: 0,
-        patterns: [0.75, 1, 1, 0.5, 0.5, 1, 2, 2]
+        beatDuration: 500,       // ms per beat (used to convert beat counts to wall-clock time)
+        nextFlipTime: 0,         // runtime state : time of the next scheduled flip (ms)
+        currentTravelBeats: 0,   // runtime state : how many beats the current segment lasts
+        patterns: [0.75, 1, 1, 0.5, 0.5, 1, 2, 2]  // beat durations per direction segment
     },
 
+    // ── FL Studio-style timeline background ──────────────────────────────────
     FLBackground: {
-        bgColor: 0x434b55, // "#434b55"
-        topBarColor: 0x2f353c, // "#2f353c"
-        majorLineColor: 0x252a30,
-        minorLineColor: 0x39414a,
-        textColor: "#d4d8dc",
-        topBarHeight: 36,
-        majorSpacing: 160,
-        subdivisions: 4,
+        bgColor: 0x434b55,        // main panel background
+        topBarColor: 0x2f353c,    // darker strip along the top (ruler area)
+        majorLineColor: 0x252a30, // beat / bar divider lines
+        minorLineColor: 0x39414a, // subdivision lines between beats
+        textColor: "#d4d8dc",     // measure-number label color
+        topBarHeight: 36,         // height (px) of the ruler strip
+        majorSpacing: 250,        // horizontal pixels between major (bar) lines
+        subdivisions: 4,          // how many minor lines to draw between each major line
     },
 
+    // ── Heart mode ───────────────────────────────────────────────────────────
+    // Spawns floating hearts as a visual flourish (triggered externally).
     heartMode: {
-        heartAmount: 6,
-        minSize: 30,
-        maxSize: 60,
-    }
+        heartAmount: 6,  // number of hearts spawned per trigger
+        minSize: 30,     // minimum heart diameter (px)
+        maxSize: 60,     // maximum heart diameter (px)
+    },
+
+    // Master switch : set to false to disable all particle effects globally
+    globalParticleToggle: false,
+
+    // ── Catch particle emitter (active config) ────────────────────────────────
+    // Tint is not set here; it is overridden per-character in spawnCatchParticles()
+    // so each burst matches the caught character's color.
+    particles: {
+        count: 14,       // number of particles per burst
+
+        speedMin: 60,    // minimum particle speed (px/s)
+        speedMax: 160,   // maximum particle speed (px/s)
+
+        lifespan: 1000,   // particle lifetime (ms)
+
+        scaleStart: 2, // initial particle scale
+        scaleEnd: 0,      // final particle scale (shrinks to nothing)
+
+        spread: 360       // emission angle range in degrees (360 = omnidirectional)
+    },
+
+    // ── Aura circle ──────────────────────────────────────────────────────────
+    // A soft glowing circle drawn behind characters spawned at wave direction changes.
+    backgroundCircle: {
+        radiusMultiplier: 0.50, // circle radius = max(charWidth, charHeight) × this
+        alpha: 0.18,            // opacity of the circle (kept low so it doesn't overpower the character)
+        fadeDuration: 300,      // ms over which the circle fades out when the character despawns
+    },
+
+    // ── Disintegration (caught-character dissolve) ────────────────────────────
+    // When a character is caught it freezes at the catcher while its strip drains, then
+    // slides leftward through a filter mask that gradually erases it from the left edge.
+    disintegration: {
+        gradientWidth: 50,      // horizontal width (px) of the soft dissolve edge at the catcher
+        dissolveDuration: 500,  // ms the character takes to travel through the gradient after the strip depletes
+        dissolveDistance: 300,  // px the character moves leftward during the dissolve phase
+        dustCount: 2,           // particles emitted per frame per character while in the gradient zone
+        dustSpeedMin: 600,
+        dustSpeedMax: 800,
+        dustLifespan: 250,      // ms each dust particle lives
+        dustScaleStart: 3,      // relative to the 8×8 __particle texture
+        dustScaleEnd: 0,
+    },
 };
 
 const { Player, PlayerOptions } = TextAliveApp;
@@ -234,7 +334,7 @@ class Catcher {
         this.direction = 1;
         this.velocity = 0;
         this.sprite = scene.add.rectangle(
-            gameSettings.catcher.xPos,
+            gameSettings.catcher.xPos - gameSettings.catcher.width,
             y,
             gameSettings.catcher.width,
             gameSettings.catcher.height,
@@ -293,6 +393,7 @@ class CharSpawnYPointer {
 
     update(delta, sceneHeight) {
         const targetSpeed = this.direction * sceneHeight * gameSettings.charSpawnYPointer.speed;
+        // Exponential smoothing: t approaches 1 as delta grows, making the pointer snap faster
         const t = 1.0 - Math.exp(-this.responsiveness * delta);
 
         this.velocity = Phaser.Math.Linear(this.velocity, targetSpeed, t);
@@ -314,47 +415,96 @@ class CharSpawnYPointer {
 }
 
 class ActiveChar {
-    constructor(scene, char, obj, startX, yPos, stripLength, stripHeight, glowOnSpawn, glowDuration) {
+    constructor(scene, char, obj, startX, yPos, stripLength, stripHeight, auraOnSpawn) {
         this.scene = scene;
         this.char = char;
         this.obj = obj;
         this.startX = startX;
         this.yPos = yPos;
+
+        // Numeric color derived once and reused for the strip, aura, and catch particles
+        this.color = Phaser.Display.Color.HexStringToColor(this.obj.style.color).color;
+
         this.strip = this.createStrip(stripLength, stripHeight);
-        this.glowDuration = glowDuration;
-        this.glowRemaining = glowOnSpawn ? glowDuration : 0;
-        this.glowEffect = glowOnSpawn ? this.createGlowEffect() : null;
+        this.auraOnSpawn = auraOnSpawn;
+
+        this.backgroundCircle = this.createBackgroundCircle();
+        this.caught = false;
     }
 
+    // STRIP
     createStrip(stripLength, stripHeight) {
         if (stripLength < gameSettings.minDelayLongChar) {
             return null;
         }
+
+        // Use the character's own color so the strip visually belongs to it
 
         const strip = this.scene.add.rectangle(
             this.startX + this.obj.width / 2,
             this.yPos,
             stripLength,
             stripHeight,
-            gameSettings.colors.strip,
+            this.color,
             1
         );
 
         strip.setOrigin(0, 0.5);
         strip.setDepth(-1);
+
         return strip;
     }
 
-    createGlowEffect() {
-        this.glowEffect = this.obj.preFX.addGlow(gameSettings.colors.glow, gameSettings.glow.outerStrength, gameSettings.glow.innerStrength, gameSettings.glow.knockout);
-        return this.glowEffect;
+    updateStripPosition(startX, catcherX, progress, charSize) {
+        if (this.strip) {
+            this.strip.x =
+                startX - (startX - catcherX) * progress + charSize / 2;
+        }
     }
 
-    update(time, startX, catcherX, fallTime, delta, destroyThreshold, fallDistance, charSize, dyingStrips) {
-        const progress = (time - (this.char.startTime - fallTime)) / fallTime;
+    // AURA CIRCLE
+    createBackgroundCircle() {
+        if (!this.auraOnSpawn) {
+            return null;
+        }
 
-        this.obj.x = startX - (startX - catcherX) * progress;
-        this.updateGlow(delta);
+        const radius =
+            Math.max(this.obj.width, this.obj.height) *
+            gameSettings.backgroundCircle.radiusMultiplier;
+
+        const circle = this.scene.add.circle(
+            this.obj.x,
+            this.obj.y,
+            radius,
+            this.color,
+            gameSettings.backgroundCircle.alpha
+        );
+
+        circle.setDepth(this.obj.depth - 1);
+
+        return circle;
+    }
+
+    updateBackgroundCircle(delta) {
+        if (!this.backgroundCircle) {
+            return;
+        }
+
+        this.backgroundCircle.x = this.obj.x;
+        this.backgroundCircle.y = this.obj.y;
+    }
+
+    // UPDATE
+    update(time, startX, catcherX, fallTime, delta, destroyThreshold, fallDistance, charSize, dyingStrips) {
+        const progress =
+            (time - (this.char.startTime - fallTime)) / fallTime;
+
+        this.obj.x =
+            startX - (startX - catcherX) * progress;
+
+        this.obj.y = this.yPos;
+
+        this.updateBackgroundCircle(delta);
         this.updateStripPosition(startX, catcherX, progress, charSize);
 
         if (progress > 1 + destroyThreshold) {
@@ -365,45 +515,140 @@ class ActiveChar {
         return false;
     }
 
-    updateGlow(delta) {
-        if (this.glowEffect == null) {
-            return;
-        }
+    spawnCatchParticles() {
+        if (this.caught) return;
+        this.caught = true;
+        if (!gameSettings.globalParticleToggle) return;
 
-        if (this.glowRemaining > 0) {
-            this.glowRemaining = Math.max(0, this.glowRemaining - delta);
-            const glowStrength = this.glowRemaining / this.glowDuration;
-            this.glowEffect.outerStrength = gameSettings.glow.outerStrength * glowStrength;
-            this.glowEffect.innerStrength = gameSettings.glow.innerStrength * glowStrength;
-            return;
-        }
+        const emitter = this.scene.catchEmitter;
+        if (!emitter) return;
 
-        this.destroyGlow();
+        // Match particle color to the character's aura color before each burst
+        emitter.setParticleTint(this.color);
+        emitter.explode(gameSettings.particles.count, this.obj.x, this.obj.y);
     }
 
-    updateStripPosition(startX, catcherX, progress, charSize) {
-        if (this.strip != null) {
-            this.strip.x = startX - (startX - catcherX) * progress + charSize / 2;
-        }
-    }
-
+    // RETIRE (MISS / OFFSCREEN)
     retire(dyingStrips, fallDistance, fallTime) {
-        this.destroyGlow();
+        this.destroyVisuals();
 
-        if (this.strip == null) {
+        if (!this.strip) {
             this.obj.destroy();
             return;
         }
 
-        const stripDuration = (this.strip.width / fallDistance) * fallTime;
-        dyingStrips.push({ strip: this.strip, maxWidth: this.strip.width, progress: 0, obj: this.obj, stripDuration: stripDuration });
+        const stripDuration =
+            (this.strip.width / fallDistance) * fallTime;
+
+        dyingStrips.push({
+            strip: this.strip,
+            maxWidth: this.strip.width,
+            progress: 0,
+            obj: this.obj,
+            stripDuration
+        });
     }
 
-    destroyGlow() {
-        if (this.glowEffect != null) {
-            this.glowEffect.setActive(false);
-            this.glowEffect = null;
+    // CLEANUP
+    destroyVisuals() {
+        if (this.backgroundCircle) {
+            const circle = this.backgroundCircle;
+            // Null immediately so updateBackgroundCircle stops tracking it during the fade
+            this.backgroundCircle = null;
+            this.scene.tweens.add({
+                targets: circle,
+                alpha: 0,
+                duration: gameSettings.backgroundCircle.fadeDuration,
+                onComplete: () => circle.destroy()
+            });
         }
+    }
+
+    // DISINTEGRATION — called once when the player catches this character
+    startDisintegration(dyingStrips, fallDistance, fallTime) {
+        // Fade the aura circle out (same path as a missed character)
+        this.destroyVisuals();
+
+        // Retire the strip; pass obj: null so destroyStrips() doesn't also destroy the text object
+        this.maskDelay = 0; // ms to wait before applying the dissolve mask
+        if (this.strip) {
+            const stripDuration = (this.strip.width / fallDistance) * fallTime;
+            // The mask only triggers once the strip has fully drained
+            this.maskDelay = stripDuration;
+            dyingStrips.push({
+                strip: this.strip,
+                maxWidth: this.strip.width,
+                progress: 0,
+                obj: null,
+                stripDuration,
+            });
+        }
+
+        // Elapsed real-time counters; updated each frame via delta in updateDisintegration()
+        this.maskElapsed = 0;         // accumulates until >= maskDelay → mask is applied
+        this.maskApplied = false;
+        this.dissolveElapsed = 0;     // accumulates after mask is applied → drives dissolve motion
+    }
+
+    // Applies the Phaser 4 filter mask that clips the character to the right of the catcher.
+    // Called lazily once the strip has fully drained.
+    _applyDissolveMask() {
+        const catcherX = gameSettings.catcher.xPos;
+        const gw = gameSettings.disintegration.gradientWidth;
+        const w = this.scene.scale.width;
+        const h = this.scene.scale.height;
+
+        // In Phaser 4, masks are filter-based: AddMaskShape clips the character to a
+        // rectangle, and blurRadius softens that rectangle's left edge.
+        // Shifting the region's left edge right by blurRadius makes catcherX the
+        // fully-transparent end of the gradient rather than the midpoint.
+        Phaser.Actions.AddMaskShape(this.obj, {
+            shape: 'rectangle',
+            blurRadius: gw / 2,
+            region: new Phaser.Geom.Rectangle(catcherX + gw / 2, 0, w - catcherX - gw / 2, h),
+            useInternal: false,
+        });
+    }
+
+    // Called each frame by GameScene.updateDisintegratingChars() while this character dissolves.
+    // delta is real elapsed time (ms) so strip-drain and dissolve timing stay accurate.
+    updateDisintegration(catcherX, delta) {
+        const d = gameSettings.disintegration;
+
+        // ── Phase 1: hold the character at the catcher while the strip drains ──
+        if (!this.maskApplied) {
+            this.obj.x = catcherX;
+            this.maskElapsed += delta;
+            if (this.maskElapsed >= this.maskDelay) {
+                this.maskApplied = true;
+                this._applyDissolveMask();
+            }
+            return false;
+        }
+
+        // ── Phase 2: slide left through the gradient and emit dust ──
+        this.dissolveElapsed += delta;
+        const t = Math.min(this.dissolveElapsed / d.dissolveDuration, 1);
+        this.obj.x = catcherX - t * d.dissolveDistance;
+
+        // Emit dust spread across the full character height using per-particle explode calls,
+        // since Phaser 4 doesn't support { min, max } Y ranges on the emitter directly
+        if (gameSettings.globalParticleToggle && this.obj.x > catcherX - d.gradientWidth) {
+            const halfH = this.obj.height / 2;
+            const emitter = this.scene.dustEmitter;
+            emitter.setParticleTint(this.color);
+            for (let i = 0; i < d.dustCount; i++) {
+                const randomY = this.obj.y + (Math.random() * 2 - 1) * halfH;
+                emitter.explode(1, catcherX, randomY);
+            }
+        }
+
+        // Destroy once the character has fully crossed the gradient zone
+        if (this.obj.x <= catcherX - d.gradientWidth) {
+            this.obj.destroy();
+            return true;
+        }
+        return false;
     }
 }
 
@@ -414,11 +659,13 @@ class FLTimelineBackground extends Phaser.GameObjects.Container {
 
         this.width = width;
         this.height = height;
+        this.topBarHeight = gameSettings.FLBackground.topBarHeight;
 
         this.scrollX = 0;
 
         this.graphics = scene.add.graphics();
-        this.labels = [];
+        // Pool of measure-number text objects : reused every frame to avoid GC churn
+        this._labelPool = [];
 
         this.add(this.graphics);
 
@@ -427,11 +674,22 @@ class FLTimelineBackground extends Phaser.GameObjects.Container {
         this.redraw();
     }
 
+    // Returns an existing pooled label or creates a new one if the pool is exhausted
+    _getOrCreateLabel(index) {
+        if (index >= this._labelPool.length) {
+            const lbl = this.scene.add.text(0, 8, '', {
+                fontFamily: "Arial",
+                fontSize: "16px",
+                color: gameSettings.FLBackground.textColor
+            });
+            this._labelPool.push(lbl);
+            this.add(lbl);
+        }
+        return this._labelPool[index];
+    }
+
     update(songTime, startX, catcherX, fallTime) {
-        // copied from the ActiveChar logic
-
-        const pixelsPerMs = (startX - catcherX) / (fallTime);
-
+        const pixelsPerMs = (startX - catcherX) / fallTime;
         this.scrollX = songTime * pixelsPerMs;
         this.redraw();
     }
@@ -445,76 +703,50 @@ class FLTimelineBackground extends Phaser.GameObjects.Container {
         g.fillStyle(gameSettings.FLBackground.bgColor);
         g.fillRect(0, 0, this.width, this.height);
 
-        // Remove old labels
-        for (const label of this.labels) {
-            label.destroy();
-        }
-        this.labels.length = 0;
-
-        const minorSpacing = gameSettings.FLBackground.majorSpacing / gameSettings.FLBackground.subdivisions;
+        const majorSpacing = gameSettings.FLBackground.majorSpacing;
+        const minorSpacing = majorSpacing / gameSettings.FLBackground.subdivisions;
 
         // Align grid so it loops infinitely
-        const offset = this.scrollX % gameSettings.FLBackground.majorSpacing;
+        const offset = this.scrollX % majorSpacing;
 
         // Minor grid lines
         g.lineStyle(1, gameSettings.FLBackground.minorLineColor, 1);
-
-
-
-        for (
-            let x = -offset;
-            x < this.width + gameSettings.FLBackground.majorSpacing;
-            x += minorSpacing
-        ) {
+        for (let x = -offset; x < this.width + majorSpacing; x += minorSpacing) {
             g.beginPath();
             g.moveTo(x, this.topBarHeight);
             g.lineTo(x, this.height);
             g.strokePath();
         }
 
-        // Major grid lines + labels
+        // Major grid lines + measure labels
         g.lineStyle(2, gameSettings.FLBackground.majorLineColor, 1);
 
-        const firstMeasure =
-            Math.floor(this.scrollX / gameSettings.FLBackground.majorSpacing);
-
+        const firstMeasure = Math.floor(this.scrollX / majorSpacing);
         let measure = firstMeasure + 1;
+        let labelIndex = 0;
 
-
-        for (
-            let x = -offset;
-            x < this.width + gameSettings.FLBackground.majorSpacing;
-            x += gameSettings.FLBackground.majorSpacing
-        ) {
+        for (let x = -offset; x < this.width + majorSpacing; x += majorSpacing) {
             g.beginPath();
             g.moveTo(x, 0);
             g.lineTo(x, this.height);
             g.strokePath();
 
-            const label = this.scene.add.text(
-                x + 8,
-                8,
-                String(measure),
-                {
-                    fontFamily: "Arial",
-                    fontSize: "16px",
-                    color: gameSettings.FLBackground.textColor
-                }
-            );
-
-            this.labels.push(label);
-            this.add(label);
-
+            const lbl = this._getOrCreateLabel(labelIndex++);
+            lbl.setPosition(x + 8, 8).setText(String(measure)).setVisible(true);
             measure++;
         }
 
-        // Top ruler bar
+        // Hide any pool labels that are not needed this frame
+        for (let i = labelIndex; i < this._labelPool.length; i++) {
+            this._labelPool[i].setVisible(false);
+        }
+
+        // Top ruler bar (drawn over the grid so labels sit on top of it)
         g.fillStyle(gameSettings.FLBackground.topBarColor);
         g.fillRect(0, 0, this.width, this.topBarHeight);
 
         // Bottom border of ruler bar
         g.lineStyle(2, 0x1f2328, 1);
-
         g.beginPath();
         g.moveTo(0, this.topBarHeight);
         g.lineTo(this.width, this.topBarHeight);
@@ -522,12 +754,10 @@ class FLTimelineBackground extends Phaser.GameObjects.Container {
     }
 
     destroy(fromScene) {
-        for (const label of this.labels) {
-            label.destroy();
+        for (const lbl of this._labelPool) {
+            lbl.destroy();
         }
-
         this.graphics.destroy();
-
         super.destroy(fromScene);
     }
 }
@@ -647,23 +877,19 @@ class BackgroundChar {
         this.exitHeartMode();
 
         this.text.setText(charText);
-        this.text.setAlpha(
-            gameSettings.backgroundLyrics.startAlpha
-        );
+        this.text.setAlpha(gameSettings.backgroundLyrics.startAlpha);
 
-        this.colorIndex =
-            (this.colorIndex + 1) % gameSettings.backgroundLyrics.colors.length;
-
-        const color = gameSettings.backgroundLyrics.colors[Math.floor(Math.random() * gameSettings.backgroundLyrics.colors.length)];
-
+        const color = gameSettings.backgroundLyrics.colors[
+            Math.floor(Math.random() * gameSettings.backgroundLyrics.colors.length)
+        ];
         this.text.setColor(color);
 
-        this.text.setFontSize(
-            gameSettings.backgroundLyrics.fontSize
-        );
+        // Track font size as a number so we never need to parse the style string
+        this._fontSize = parseInt(gameSettings.backgroundLyrics.fontSize);
+        this.text.setFontSize(this._fontSize);
     }
 
-    updateHeartMode(currentTime) {
+    updateHeartMode(currentTime, deltaMs) {
         const t = currentTime / 1000;
 
         const beat =
@@ -673,35 +899,28 @@ class BackgroundChar {
 
         this.bigHeart.setScale(beat);
 
-        for (const heart of this.hearts) {
+        const deltaSec = deltaMs / 1000;
 
-            heart.y -= heart.floatSpeed * 0.016;
+        for (const heart of this.hearts) {
+            heart.y -= heart.floatSpeed * deltaSec;
 
             if (heart.y < -100) {
-                heart.y =
-                    this.scene.scale.height + 100;
+                heart.y = this.scene.scale.height + 100;
             }
 
             const scale =
                 heart.baseScale +
-                Math.sin(
-                    t * 2 +
-                    heart.phase
-                ) * 0.1;
+                Math.sin(t * 2 + heart.phase) * 0.1;
 
             heart.setScale(scale);
         }
 
-        // start fading down
+        // Fade out after the character's duration ends
         if (currentTime >= this.endTime) {
-            const alpha =
-                Math.max(
-                    0,
-                    this.bigHeart.alpha - 0.01
-                );
+            const fadePerMs = 1 / gameSettings.backgroundLyrics.maxDurationBGEffect;
+            const alpha = Math.max(0, this.bigHeart.alpha - fadePerMs * deltaMs);
 
             this.bigHeart.setAlpha(alpha);
-
             for (const heart of this.hearts) {
                 heart.setAlpha(alpha * 0.5);
             }
@@ -712,41 +931,27 @@ class BackgroundChar {
         }
     }
 
-    update(currentTime) {
-
-        const animTime =
-            gameSettings.backgroundLyrics.maxDurationBGAnim;
+    update(currentTime, deltaMs) {
+        const animTime = gameSettings.backgroundLyrics.maxDurationBGAnim;
 
         if (this.heartMode) {
-            this.updateHeartMode(currentTime)
+            this.updateHeartMode(currentTime, deltaMs);
             return;
         }
 
-
         if (currentTime >= this.endTime) {
-
             if (this.text.alpha > 0) {
-                this.text.setAlpha(
-                    this.text.alpha -
-                    1 / gameSettings.backgroundLyrics.maxDurationBGEffect
-                );
-            }
-            else {
+                const fadePerMs = 1 / gameSettings.backgroundLyrics.maxDurationBGEffect;
+                this.text.setAlpha(Math.max(0, this.text.alpha - fadePerMs * deltaMs));
+            } else {
                 this.text.setText("");
             }
-
             return;
         }
 
         if (currentTime <= this.startTime + animTime) {
-
-            const currentSize =
-                parseInt(this.text.style.fontSize);
-
-            this.text.setFontSize(
-                currentSize +
-                gameSettings.backgroundLyrics.sizeChangeCoeff
-            );
+            this._fontSize += gameSettings.backgroundLyrics.sizeChangeCoeff;
+            this.text.setFontSize(this._fontSize);
         }
     }
 
@@ -811,6 +1016,7 @@ class GameScene extends Phaser.Scene {
         }, this);
         this.activeChars = [];
         this.pendingChars = [];
+        this.disintegratingChars = []; // characters currently dissolving through the catcher mask
         this.minDelayLongChar = gameSettings.minDelayLongChar;
         this.dyingStrips = [];
         this.fallDistance = (this.scale.width + gameSettings.lyrics.startXOffset) - this.catcher.x;
@@ -842,60 +1048,93 @@ class GameScene extends Phaser.Scene {
             strokeThickness: 3
         }).setOrigin(0, 0).setDepth(1000);
 
-        this.activeBGChar = this.add.text(this.scale.width / 2, this.scale.height / 2, "", {
-            fontFamily: gameSettings.fonts.main,
-            fontSize: gameSettings.backgroundLyrics.fontSize,
-            color: gameSettings.backgroundLyrics.colors[this.bgCharColorIndex]
-        }).setOrigin(0.5).setAlpha(0).setDepth(-1);
-
-        const particleGraphics = this.make.graphics({ x: 0, y: 0, add: false });
-        particleGraphics.fillStyle(0xffffff, 1);
-        particleGraphics.fillRect(0, 0, 8, 8);
-        particleGraphics.generateTexture("particle", 8, 8);
-        particleGraphics.destroy();
-
-        this.catchParticles = this.add.particles(0, 0, "particle", {
-            speed: gameSettings.catchParticles.speed,
-            angle: { min: -30, max: 30 },
-            scale: gameSettings.catchParticles.scale,
-            lifespan: gameSettings.catchParticles.lifespan,
-            quantity: gameSettings.catchParticles.quantity,
-            emitting: false,
-            tint: gameSettings.catchParticles.colors,
-            alpha: gameSettings.catchParticles.alpha
-        });
-
         this.scale.on('resize', (gameSize) => {
             this.comboCounter.resize(gameSize.height);
         });
 
         this.FLBackground = new FLTimelineBackground(this, this.scale.width, this.scale.height);
         this.FLBackground.setDepth(-10000);
+
+        this.createCatchParticleEmitter();
+        this.createDustEmitter();
+    }
+
+    // Creates the dust particle emitter used by disintegrating characters.
+    // Tint is set per-character at emit time (same pattern as catchEmitter).
+    createDustEmitter() {
+        // Reuses the "__particle" texture created by createCatchParticleEmitter()
+        const d = gameSettings.disintegration;
+
+        this.dustEmitter = this.add.particles(0, 0, "__particle", {
+            emitting: false,
+            lifespan: d.dustLifespan,
+            speed: { min: d.dustSpeedMin, max: d.dustSpeedMax },
+            angle: 180,
+            scale: { start: d.dustScaleStart, end: d.dustScaleEnd, ease: "quad.out" },
+            alpha: { start: 0.8, end: 0, ease: "linear" },
+        });
+    }
+
+    createCatchParticleEmitter() {
+        if (!this.textures.exists("__particle")) {
+            const g = this.add.graphics();
+            g.fillStyle(0xffffff, 1);
+            g.fillCircle(4, 4, 4);
+            g.generateTexture("__particle", 8, 8);
+            g.destroy();
+        }
+
+        const pc = gameSettings.particles;
+
+        this.catchEmitter = this.add.particles(0, 0, "__particle", {
+            emitting: false,
+            lifespan: pc.lifespan,
+            quantity: pc.count,
+            speed: { min: pc.speedMin, max: pc.speedMax },
+            angle: { min: 0, max: 360 },
+            scale: { start: pc.scaleStart, end: pc.scaleEnd, ease: "quad.out" },
+            alpha: { start: 1, end: 0, ease: "linear" },
+            rotate: { min: 0, max: 360 }
+        });
     }
 
     update(time, delta) {
         this.fpsText.setText("FPS: " + Math.round(this.game.loop.actualFps));
 
-        delta = delta / 1000;
+        // delta arrives in milliseconds from Phaser; convert once for physics helpers
+        const deltaMs = delta;
+        const deltaSec = delta / 1000;
         const w = this.scale.width;
         const h = this.scale.height;
 
         if (!taPlayer || !taPlayer.isPlaying) return;
-        const songTime = taPlayer.timer.position;
+        const songTime = taPlayer.timer?.position ?? 0;
         const startX = w + gameSettings.lyrics.startXOffset;
 
         this.FLBackground.update(songTime, startX, this.catcher.x, this.fallTime);
-        this.catcher.update(delta, h);
+        this.catcher.update(deltaSec, h);
         this.spawnPointerGraphics.y = this.charSpawnYPointer.y;
-        this.charSpawnYPointer.update(delta, h);
+        this.charSpawnYPointer.update(deltaSec, h);
         this.spawnPendingChars(songTime, startX, w, h);
-        this.updateActiveChars(songTime, startX, delta);
-        this.destroyStrips(delta);
-        this.backgroundChar.update(taPlayer.timer.position);
+        this.updateActiveChars(songTime, startX, deltaSec);
+        this.updateDisintegratingChars(deltaMs);
+        this.destroyStrips(deltaMs);
+        this.backgroundChar.update(songTime, deltaMs);
+    }
+
+    // Advances each caught character through its dissolve animation each frame
+    updateDisintegratingChars(delta) {
+        for (let i = this.disintegratingChars.length - 1; i >= 0; i--) {
+            const char = this.disintegratingChars[i];
+            if (char.updateDisintegration(this.catcher.x, delta)) {
+                this.disintegratingChars.splice(i, 1);
+            }
+        }
     }
 
     getCharColor(char) {
-        // gives color variation depending on parent phrase and parent word to destinguish them from each others
+        // Phrase sets the base color; word index within the phrase picks a brightness tint,
+        // so characters within the same phrase stay recognizably similar but are still distinguishable.
         const word = char.parent;
         const phrase = word?.parent;
 
@@ -918,18 +1157,17 @@ class GameScene extends Phaser.Scene {
     }
 
     spawnPendingChars(time, startX, sceneWidth, sceneHeight) {
-        let lastSpawnedObj = null;
-
         while (this.pendingChars.length > 0) {
             const nextChar = this.pendingChars[0];
             const yPos = this.charSpawnYPointer.y;
-            let glowOnSpawn = false;
+            let auraOnSpawn = false;
 
             if (time >= nextChar.startTime - this.fallTime) {
 
+                // check if wavestate changed direction
                 if (this.waveState.advance(time)) {
                     this.charSpawnYPointer.flipDirection();
-                    glowOnSpawn = true;
+                    auraOnSpawn = true;
                 }
 
                 let textToRender = nextChar.text;
@@ -953,7 +1191,7 @@ class GameScene extends Phaser.Scene {
                 // Opening punctuation: shift slightly left so that the
                 // next character visually follows it.
                 else if (gameSettings.lyrics.leadingChars.includes(textToRender)) {
-                    spawnX -= gameSettings.lyrics.fontSize * 0.35;
+                    spawnX -= gameSettings.lyrics.fontSize * gameSettings.lyrics.leadingCharShift;
                 }
 
                 const charObj = this.add.text(
@@ -966,6 +1204,28 @@ class GameScene extends Phaser.Scene {
                         color: this.getCharColor(nextChar)
                     }
                 ).setOrigin(0.5);
+
+                // For normal characters, shift vertically when they would overlap the previous one.
+                // X position is tied to song timing, so we offset Y instead of X.
+                if (
+                    this.activeChars.length > 0 &&
+                    !gameSettings.lyrics.trailingChars.includes(textToRender) &&
+                    !gameSettings.lyrics.leadingChars.includes(textToRender)
+                ) {
+                    const prev = this.activeChars[this.activeChars.length - 1];
+                    const prevProgress = (time - (prev.char.startTime - this.fallTime)) / this.fallTime;
+                    const prevX = prev.startX - (prev.startX - this.catcher.x) * prevProgress;
+                    const gap = (startX - charObj.width * 0.5) - (prevX + prev.obj.width * 0.5);
+                    if (gap < gameSettings.lyrics.minCharSpacing) {
+                        spawnY += this.charSpawnYPointer.direction * gameSettings.lyrics.overlapYShift;
+                        spawnY = Phaser.Math.Clamp(
+                            spawnY,
+                            gameSettings.lyrics.marginY,
+                            sceneHeight - gameSettings.lyrics.marginY
+                        );
+                        charObj.y = spawnY;
+                    }
+                }
 
                 const stripLength =
                     nextChar.endTime - nextChar.startTime - this.charSize;
@@ -981,12 +1241,10 @@ class GameScene extends Phaser.Scene {
                         spawnY,
                         stripLength,
                         this.charSize / 5,
-                        glowOnSpawn,
-                        gameSettings.spawnGlowDuration
+                        auraOnSpawn
                     )
                 );
 
-                lastSpawnedObj = charObj;
                 this.pendingChars.shift();
             } else {
                 break;
@@ -1013,6 +1271,7 @@ class GameScene extends Phaser.Scene {
     }
 
     tintColor(hex, factor) {
+        // Multiplies each RGB channel by factor: <1 darkens, >1 brightens
         const rgb = this.hexToRgb(hex);
 
         return this.rgbToHex(
@@ -1022,19 +1281,19 @@ class GameScene extends Phaser.Scene {
         );
     }
 
-    destroyStrips(delta) {
-        delta = delta * 1000;
+    destroyStrips(deltaMs) {
         for (let i = this.dyingStrips.length - 1; i >= 0; i--) {
             const item = this.dyingStrips[i];
 
-            item.progress += delta / item.stripDuration;
+            item.progress += deltaMs / item.stripDuration;
 
             const remainingWidth = item.maxWidth * (1 - item.progress);
             item.strip.setSize(Math.max(0, remainingWidth), item.strip.height);
 
             if (item.progress >= 1) {
                 item.strip.destroy();
-                item.obj.destroy();
+                // obj is null when the character was caught (disintegration owns its lifecycle)
+                if (item.obj) item.obj.destroy();
                 this.dyingStrips.splice(i, 1);
             }
         }
@@ -1052,48 +1311,24 @@ class GameScene extends Phaser.Scene {
     }
 
     catchChar(catcher, charObj) {
-        this.catchParticles.emitParticleAt(this.catcher.x, this.catcher.y, 20);
-
         const idx = this.activeChars.findIndex(l => l.obj === charObj);
-        if (idx > -1) {
-            const char = this.activeChars[idx];
-            this.activeChars.splice(idx, 1);
-            char.retire(this.dyingStrips, this.fallDistance, this.fallTime);
+        if (idx === -1) return;
 
-            this.comboCounter.increment();
+        const char = this.activeChars[idx];
+        this.activeChars.splice(idx, 1);
 
-            const charDuration =
-                char.char.endTime -
-                char.char.startTime;
+        // Explosion burst only for characters that had an aura (wave-flip moments)
+        if (char.auraOnSpawn) char.spawnCatchParticles();
 
-            this.backgroundChar.show(
-                charObj.text,
-                charDuration,
-                taPlayer.timer.position
-            );
-        }
-    }
+        // Hand the character off to the disintegration path:
+        // strip retires normally, aura fades, and the text object dissolves through the mask
+        char.startDisintegration(this.dyingStrips, this.fallDistance, this.fallTime);
+        this.disintegratingChars.push(char);
 
-    updateBGChar() {
-        if (!this.activeBGChar) {
-            return;
-        }
+        this.comboCounter.increment();
 
-        const animTime = gameSettings.backgroundLyrics.maxDurationBGAnim;
-        const position = taPlayer.timer.position;
-
-        if (position >= this.bgCharEndTime) {
-            if (this.activeBGChar.alpha > 0) {
-                this.activeBGChar.setAlpha(this.activeBGChar.alpha - 1 / this.maxDurationBGEffect);
-            }
-            else {
-                this.activeBGChar.setText(null);
-            }
-        }
-        else if (position <= this.bgCharStartTime + animTime) {
-            const currentSize = parseInt(this.activeBGChar.style.fontSize);
-            this.activeBGChar.setFontSize(`${currentSize + gameSettings.backgroundLyrics.sizeChangeCoeff}px`);
-        }
+        const charDuration = char.char.endTime - char.char.startTime;
+        this.backgroundChar.show(charObj.text, charDuration, taPlayer.timer?.position ?? 0);
     }
 
     loadLyrics(firstChar) {
@@ -1105,6 +1340,8 @@ class GameScene extends Phaser.Scene {
         }
         this.pendingChars.sort((a, b) => a.startTime - b.startTime);
     }
+
+
 }
 
 document.body.style.backgroundColor = gameSettings.colors.background;
