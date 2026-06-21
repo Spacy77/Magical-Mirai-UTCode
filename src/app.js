@@ -40,14 +40,15 @@ const gameSettings = {
         destroyOverflowRatio: 0.2,
         minDelayNewYPos: 500,
         minDelayLongChar: 500,
-        minGapBetweenChars: 100
+        minGapBetweenChars: 100,
+        lyricsDelay: 170
     },
     backgroundLyrics: {
         fontSize: "450px",
         maxDurationBGEffect: 150,
         maxDurationBGAnim: 100,
         sizeChangeCoeff: 10,
-        colors: ["#D00000", "#FFB703", "#2A9D8F", "#3A86FF", "#8338EC"],
+        colors: ["#D00000", "#FFB703", "#2A9D8F", "#86cecb", "#8338EC", "#e12885", "#137a7f"],
         startAlpha: 0.5,
         fadeOutSpeed: 5
     },
@@ -56,9 +57,13 @@ const gameSettings = {
         lifespan: { min: 5, max: 30 },
         quantity: 8,
         size: 45,
-        colors: [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff],
+        boringColors: [0x274c5e, 0x3a7d7a, 0x7fb8aa, 0xd9efe7, 0xfdfaf4],
+        mildColors: [0x6d3fa9, 0xa37ad9, 0x2e7d5b, 0x7ecf9a, 0xf3f0ea, 0xe12885, 0x137a7f],
+        excitingColors: [0xff9835, 0xfaa668, 0xf52019, 0xff533a, 0xff7254],
         alpha: { min: 0.3, max: 0.6 },
-        effectSize: 225
+        effectSizes: [225, 300, 400],
+        arousalThresholds: [0.335, 0.37],
+        valenceThresholds: [0.15, 0.20]
     },
     combo: {
         xOffset: 100,
@@ -97,7 +102,38 @@ const gameSettings = {
         musicalBackdropEndLeadTime: 10
     },
 
-    special_chars: [" ", "　", ".", "。", ",", "、", "-", "ー", "～", "~"]
+    special_chars: [" ", "　", ".", "。", ",", "、", "-", "ー", "～", "~"],
+
+    visualizer: {
+        numBars: 15,
+        barWidth: 60,
+        barGap: 5,
+        maxHeight: 800,
+        numSegments: 16,
+        segmentGap: 4,
+        reflectionSegments: 4,
+        reflectionAlpha: 0.25,
+        smoothingUp: 0.95,
+        smoothingDown: 0.04,
+        depth: -5,
+        
+        bellCurveStrength: 5,
+        beatSharpness: 20,
+        arousalWeight: 10.0,
+        beatWeight: 100.0,
+        noiseAmount: 0.60,
+        perBarDrift: 20,
+        minLevel: 50.0,
+
+        redThreshold: 0.4,
+        gradientStops: [
+            { r: 134,  g: 206, b: 203  }, //low
+            { r: 34, g: 16, b: 79   }, //middle
+            { r: 225, g: 40,  b: 133   }  //top
+        ],
+
+        minDelayTrigger: 5000
+    },
 };
 
 const { Player } = TextAliveApp;
@@ -172,7 +208,13 @@ class ComboCounter {
             this.mainText.x = this.valueX - this.varXOffset;
             this.totalScoreText.x = this.valueX - this.varXOffset;
             this.displayComboText.x = this.displayX - this.varXOffset;
-            this.displayTotalScoreText.x = this.displayX - this.varXOffset;
+
+            if (this.totalScoreText.x > this.valueX - this.varXOffset){
+                this.totalScoreText.x = this.valueX - this.varXOffset;
+            }
+            if (this.displayTotalScoreText.x > this.displayX - this.varXOffset){
+                this.displayTotalScoreText.x = this.displayX - this.varXOffset;
+            }
         }
 
         this.updateText();
@@ -188,7 +230,7 @@ class ComboCounter {
             this.varXOffset = 0;
             this.ghostText.x = this.valueX;
             this.mainText.x = this.valueX;
-            this.totalScoreText.x = this.valueX;
+            this.displayComboText.x = this.displayX - this.varXOffset;
 
             this.updateText();
             this.scene.tweens.killTweensOf([this.mainText, this.ghostText]);
@@ -363,19 +405,19 @@ class CharSpawnYPointer {
     }
 
     changeSpeed(speed){
-        console.log("Change pointer speed");
         this.charSpawnYPointerSpeed = speed;
     }
 }
 
 class ActiveChar {
-    constructor(scene, char, obj, startX, yPos, stripLength, stripHeight, glowDuration, charSpawnYPointerRef) {
+    constructor(scene, char, obj, startX, yPos, stripLength, stripHeight, glowDuration, charSpawnYPointerRef, effectiveStartTime) {
         this.scene = scene;
         this.char = char;
         this.obj = obj;
         this.startX = startX;
         this.yPos = yPos;
         this.charSpawnYPointer = charSpawnYPointerRef;
+        this.effectiveStartTime = effectiveStartTime;
         this.strip = this.createStrip(stripLength, stripHeight);
         this.glowDuration = glowDuration;
         this.glowRemaining = glowDuration;
@@ -414,7 +456,7 @@ class ActiveChar {
     }
 
     update(time, startX, catcherX, fallTime, delta, destroyThreshold, fallDistance, charSize, dyingStrips) {
-        const progress = (time - (this.char.startTime - fallTime)) / fallTime;
+        const progress = (time - (this.effectiveStartTime - fallTime)) / fallTime;
 
         this.obj.x = startX - (startX - catcherX) * progress;
         this.updateGlow(delta);
@@ -661,6 +703,361 @@ class MusicalBackdrop {
     }
 }
 
+/**
+ * Visualisateur audio temps réel : colonnes de carrés colorés à la façon d'un égaliseur.
+ * Utilise la Web Audio API (intégrée au navigateur, aucune dépendance externe).
+ * Fallback automatique sur les données de beats TextAlive si CORS bloque l'accès audio.
+ */
+class MusicVisualizer {
+    constructor(scene, config) {
+        this.scene = scene;
+
+        // ── Config mise en page ──────────────────────────────────────────────
+        this.x                  = config.x                  ?? 0;
+        this.y                  = config.y                  ?? scene.scale.height;
+        this.numBars            = config.numBars            ?? 16;
+        this.barWidth           = config.barWidth           ?? 35;
+        this.barGap             = config.barGap             ?? 5;
+        this.maxHeight          = config.maxHeight          ?? 250;
+        this.numSegments        = config.numSegments        ?? 12;
+        this.segmentGap         = config.segmentGap         ?? 4;
+        this.reflectionSegments = config.reflectionSegments ?? 4;
+        this.reflectionAlpha    = config.reflectionAlpha    ?? 0.25;
+        this.depth              = config.depth              ?? -5;
+        this.inactiveColor      = config.inactiveColor      ?? 0x1a1a1a;
+
+        // ── Lissage asymétrique (monte vite, descend lentement) ──────────────
+        this.smoothingUp   = config.smoothingUp   ?? 0.6;
+        this.smoothingDown = config.smoothingDown ?? 0.12;
+
+        // ── État Web Audio ───────────────────────────────────────────────────
+        this.audioContext = null;
+        this.analyser     = null;
+        this.dataArray    = null;
+        this.connected    = false;
+        this.corsBlocked  = false;
+
+        // ── Fallback TextAlive beat ──────────────────────────────────────────
+        // Utilisé si la connexion Web Audio échoue (CORS).
+        // Simule un signal global basé sur l'énergie du beat courant.
+        this.beatFallbackLevel = 0;
+
+        // ── Niveaux lissés courants [0..1] par barre ─────────────────────────
+        this.currentLevels = new Float32Array(this.numBars).fill(0);
+        // Phases d'oscillation indépendantes par barre — donne une vie propre à chaque colonne
+        this.barPhases = new Float32Array(this.numBars);
+        for (let b = 0; b < this.numBars; b++) {
+            this.barPhases[b] = Math.random() * Math.PI * 2;
+        }
+
+        // Mémorise les smoothings de base pour les adapter au BPM
+        this._baseSmoothingDown = this.smoothingDown;
+        this._baseSmoothingUp   = this.smoothingUp;
+
+        // Cache du profil d'accord courant (évite de recalculer à chaque frame)
+        this._lastChordName    = null;
+        this._lastChordProfile = null;
+
+        // Enveloppe de phrase courante
+        this._phraseEnvelope = 1.0;
+
+        // ── Couleurs par segment : vert → jaune → rouge ──────────────────────
+        this.segmentColors = this._buildGradient();
+
+        // ── Objet graphique Phaser ───────────────────────────────────────────
+        this.graphics = scene.add.graphics().setDepth(this.depth).setAlpha(0);
+
+        this.enabled = false;
+    }
+
+    // ── Connexion Web Audio ─────────────────────────────────────────────────
+    tryConnect() {
+        this.corsBlocked = true;
+        console.log("MusicVisualizer : mode fallback TextAlive activé");
+    }
+
+    /**
+     * Construit un tableau de facteurs par barre à partir du nom d'un accord.
+     * Les barres proches du fondamental et de la quinte sont renforcées.
+     * Ex: "Am" → fondamental A (9), quinte E (4)
+     */
+    _buildChordProfile(chordName) {
+        // Table de correspondance note → demi-ton (0 = C)
+        const noteMap = {
+            'C': 0, 'C#': 1, 'Db': 1,
+            'D': 2, 'D#': 3, 'Eb': 3,
+            'E': 4,
+            'F': 5, 'F#': 6, 'Gb': 6,
+            'G': 7, 'G#': 8, 'Ab': 8,
+            'A': 9, 'A#': 10, 'Bb': 10,
+            'B': 11
+        };
+
+        // Extrait la note fondamentale du nom d'accord ("Am7" → "A", "C#maj" → "C#")
+        const match = chordName.match(/^([A-G][#b]?)/);
+        if (!match) return null;
+
+        const root  = noteMap[match[1]] ?? 0;
+        const fifth = (root + 7) % 12;
+
+        // Mappe les demi-tons vers des positions de barres
+        const rootBar  = (root  / 12) * this.numBars;
+        const fifthBar = (fifth / 12) * this.numBars;
+
+        const profile = new Float32Array(this.numBars);
+        for (let b = 0; b < this.numBars; b++) {
+            const dRoot  = Math.min(Math.abs(b - rootBar),  this.numBars - Math.abs(b - rootBar));
+            const dFifth = Math.min(Math.abs(b - fifthBar), this.numBars - Math.abs(b - fifthBar));
+
+            // Pic gaussien sur le fondamental (fort) et la quinte (plus doux)
+            const rootPeak  = Math.exp(-(dRoot  * dRoot)  / (this.numBars * 0.08));
+            const fifthPeak = Math.exp(-(dFifth * dFifth) / (this.numBars * 0.08)) * 0.5;
+
+            // Niveau de base 0.7 + modulation harmonique jusqu'à +0.5
+            profile[b] = 0.7 + 0.5 * Math.max(rootPeak, fifthPeak);
+        }
+
+        return profile;
+    }
+
+    /**
+     * Fallback : simule des niveaux de barres à partir des données de beat TextAlive.
+     * Donne un effet de pulsation rythmique quand la Web Audio est inaccessible.
+     */
+    _readBeatFallbackLevels(taPlayer) {
+        if (!taPlayer) return;
+
+        const pos = taPlayer.timer.position;
+
+        // ── 1. Valence / Arousal ─────────────────────────────────────────────────
+        const va      = taPlayer.getValenceArousal ? taPlayer.getValenceArousal(pos) : null;
+        const arousal = va ? Phaser.Math.Clamp((va.a + 1) / 2, 0, 1) : 0.5;
+        const valence = va ? Phaser.Math.Clamp((va.v + 1) / 2, 0, 1) : 0.5;
+
+        // ── 2. Beat ──────────────────────────────────────────────────────────────
+        const beat = taPlayer.findBeat(pos);
+        let pulse  = 0;
+        let bpm    = 120;
+        let beatPositionInBar = 0; // position dans la mesure (0 = temps fort)
+
+        if (beat) {
+            bpm = beat.bpm || 120;
+
+            // Attaque aiguisée proportionnelle à l'arousal
+            // Fort arousal = attaque plus brutale
+            const sharpness = (this.beatSharpness ?? 3) + arousal * 2;
+            pulse = Math.pow(Math.max(0, 1 - beat.progress(pos)), sharpness);
+
+            const decayFactor = 1 - pulse * arousal;
+            this.beatFallbackLevel *= (1 - decayFactor * 0.15);
+
+            // Position dans la mesure : déduite de l'index du beat
+            // Les temps forts (0, 2) donnent une impulsion plus forte que (1, 3)
+            if (beat.position !== undefined) {
+                beatPositionInBar = beat.position % 4;
+            }
+        }
+
+        // Coefficient de pulsion selon la position dans la mesure
+        // Temps 1 et 3 (index 0, 2) = forte impulsion
+        // Temps 2 et 4 (index 1, 3) = impulsion réduite
+        const beatAccentFactor = (beatPositionInBar % 2 === 0) ? 1.0 : 0.6;
+        const accentedPulse    = pulse * beatAccentFactor;
+
+        // ── 3. Adaptation du smoothing au BPM ────────────────────────────────────
+        // Plus le tempo est rapide, plus les barres montent et descendent vite
+        const bpmFactor     = bpm / 120;
+        this.smoothingDown  = this._baseSmoothingDown * bpmFactor;
+        this.smoothingUp    = Math.min(0.95, this._baseSmoothingUp * bpmFactor);
+
+        // ── 4. Enveloppe de phrase ───────────────────────────────────────────────
+        // Le visualisateur monte en intensité au fil d'une phrase et redescend à la fin
+        const phrase = taPlayer.findPhrase ? taPlayer.findPhrase(pos) : null;
+        if (phrase && phrase.endTime > phrase.startTime) {
+            const t = (pos - phrase.startTime) / (phrase.endTime - phrase.startTime);
+            // Attaque rapide (10%), sustain, release (15%)
+            const envelope = t < 0.10 ? t / 0.10
+                        : t > 0.85 ? 1 - (t - 0.85) / 0.15
+                        : 1.0;
+            // Lisse l'enveloppe pour éviter les sauts brusques
+            this._phraseEnvelope += (envelope - this._phraseEnvelope) * 0.05;
+        } else {
+            this._phraseEnvelope = 1.0;
+        }
+
+        // ── 5. Profil harmonique basé sur l'accord courant ───────────────────────
+        // Recalcule uniquement si l'accord a changé
+        const chord = taPlayer.findChord ? taPlayer.findChord(pos) : null;
+        const chordName = chord ? (chord.name ?? null) : null;
+        if (chordName !== this._lastChordName) {
+            this._lastChordName    = chordName;
+            this._lastChordProfile = chordName
+                ? this._buildChordProfile(chordName)
+                : null;
+        }
+
+        // ── 6. Niveau global ─────────────────────────────────────────────────────
+        const arousalW  = this.arousalWeight ?? 0.5;
+        const beatW     = this.beatWeight    ?? 0.5;
+        const baseLevel = arousal * arousalW + accentedPulse * beatW;
+        this.beatFallbackLevel += (baseLevel - this.beatFallbackLevel) * 0.4;
+        //console.log(`arousal : ${arousal} arousalW : ${arousalW} accentedPulse : ${accentedPulse} beatW : ${beatW}`);
+
+        // ── 7. Distribution par barre ────────────────────────────────────────────
+        const center      = (this.numBars - 1) / 2;
+        const bellStr     = this.bellCurveStrength ?? 4;
+        const drift       = this.perBarDrift       ?? 0.8;
+        const noise       = this.noiseAmount       ?? 0.25; // réduit vs avant
+        const minLevel    = this.minLevel          ?? 0.05;
+        const bpmDrift    = 0.001 * bpmFactor;
+
+        // La valence (positivité) décale le centre de gravité du visualisateur
+        // valence faible = barres basses concentrées, valence haute = barres étalées
+        const spread    = 0.5 + valence * 0.5; // 0.5..1.0
+        const adjBellStr = bellStr / spread;   // plus valence est haute, plus c'est étalé
+
+        for (let b = 0; b < this.numBars; b++) {
+            // Oscillation lente propre à chaque barre, calée sur le BPM
+            this.barPhases[b] += bpmDrift * (0.6 + b * 0.08);
+            const driftValue = 1 - drift * 0.5 + drift * 0.5 * Math.sin(this.barPhases[b]);
+
+            // Courbe de cloche avec spread ajusté par la valence
+            const dist        = Math.abs(b - center) / center;
+            const bellProfile = Math.exp(-dist * dist * adjBellStr);
+
+            // Profil harmonique de l'accord (1.0 si pas d'accord disponible)
+            const chordMod = this._lastChordProfile ? this._lastChordProfile[b] : 1.0;
+
+            // Bruit réduit : le hasard reste mais ne domine plus
+            const randomNoise = 1 - noise * 0.5 + Math.random() * noise;
+
+            const target = Phaser.Math.Clamp(
+                this.beatFallbackLevel
+                    * bellProfile
+                    * driftValue
+                    * chordMod
+                    * this._phraseEnvelope
+                    * randomNoise
+                + minLevel,
+                0, 1
+            );
+
+            const prev  = this.currentLevels[b];
+            const alpha = target > prev ? this.smoothingUp : this.smoothingDown;
+            this.currentLevels[b] = prev + (target - prev) * alpha;
+            //console.log(`prev : ${prev} target : ${target} alpha : ${alpha}`);
+        }
+    }
+
+    // ── Rendu ───────────────────────────────────────────────────────────────
+
+    /**
+     * À appeler dans update() de GameScene.
+     * @param {Player} taPlayer - instance TextAlive (pour le fallback beat)
+     */
+    update(taPlayer) {
+        // Connexion paresseuse : retente si pas encore connecté
+        if (!this.connected && !this.corsBlocked) {
+            this.tryConnect();
+        }
+
+        this._readBeatFallbackLevels(taPlayer);
+        this._draw();
+    }
+
+    _draw() {
+        this.graphics.clear();
+
+        const segH  = Math.max(1, Math.floor((this.maxHeight - this.segmentGap * this.numSegments) / this.numSegments));
+        const stepX = this.barWidth + this.barGap;
+
+        for (let b = 0; b < this.numBars; b++) {
+            const level      = this.currentLevels[b];
+            const activeSegs = Math.round(level * this.numSegments);
+            const barX       = this.x + b * stepX;
+
+            // ── Barres principales (du bas vers le haut) ─────────────────────
+            for (let s = 0; s < activeSegs; s++) {
+                const segY = this.y - (s + 1) * (segH + this.segmentGap);
+                this.graphics.fillStyle(this.segmentColors[s], 1);
+                this.graphics.fillRect(barX, segY, this.barWidth, segH);
+            }
+
+            // ── Reflet en dessous de la ligne de base ─────────────────────────
+            const refSegs = Math.min(activeSegs, this.reflectionSegments);
+            for (let s = 0; s < refSegs; s++) {
+                const segY  = this.y + s * (segH + this.segmentGap) + this.segmentGap;
+                const alpha = this.reflectionAlpha * (1 - s / this.reflectionSegments);
+                this.graphics.fillStyle(this.segmentColors[s], alpha);
+                this.graphics.fillRect(barX, segY, this.barWidth, segH);
+            }
+        }
+    }
+
+    // ── Utilitaires ─────────────────────────────────────────────────────────
+
+    /**
+     * Précalcule les couleurs des segments : vert (#00cc00) → jaune → rouge (#cc0000).
+     */
+    _buildGradient() {
+        const stops       = gameSettings.visualizer.gradientStops;
+        const redThreshold = gameSettings.visualizer.redThreshold ?? 0.5;
+
+        const colors = [];
+
+        for (let i = 0; i < this.numSegments; i++) {
+            // t normalisé : 0 = bas, 1 = haut — mais compressé par redThreshold
+            const t = Math.min(1, (i / (this.numSegments - 1)) / redThreshold);
+
+            // Interpolation entre les stops
+            const scaledT  = t * (stops.length - 1);
+            const stopIdx  = Math.min(Math.floor(scaledT), stops.length - 2);
+            const frac     = scaledT - stopIdx;
+
+            const a = stops[stopIdx];
+            const b = stops[stopIdx + 1];
+
+            const r = Math.round(a.r + (b.r - a.r) * frac);
+            const g = Math.round(a.g + (b.g - a.g) * frac);
+            const bv = Math.round(a.b + (b.b - a.b) * frac);
+
+            colors.push((r << 16) | (g << 8) | bv);
+        }
+
+        return colors;
+    }
+
+    destroy() {
+        this.graphics.destroy();
+        if (this.audioContext) this.audioContext.close();
+    }
+
+    enable(duration = 500) {
+        if (this.enabled) return;
+        this.segmentColors = this._buildGradient();
+        this.enabled = true;
+        this.graphics.setAlpha(0);
+        this.scene.tweens.add({
+            targets: this.graphics,
+            alpha: 1,
+            duration: duration,
+            ease: 'Quad.easeIn'
+        });
+    }
+
+    disable(duration = 500) {
+        if (!this.enabled) return;
+        this.enabled = false;
+        this.graphics.setAlpha(1);
+        this.scene.tweens.add({
+            targets: this.graphics,
+            alpha: 0,
+            duration: duration,
+            ease: 'Quad.easeOut'
+        });
+    }
+}
+
 class LoadScene extends Phaser.Scene {
     constructor() { super("LoadScene"); }
     create() {
@@ -759,6 +1156,16 @@ class GameScene extends Phaser.Scene {
         this.scale.on('resize', (gameSize) => {
             this.comboCounter.resize(gameSize.height);
         });
+
+        const vizCfg = gameSettings.visualizer;
+        this.visualizer = new MusicVisualizer(this, {
+            ...vizCfg,
+            // Position : centré horizontalement, ligne de base en bas de l'écran
+            x: (this.scale.width - (vizCfg.numBars * (vizCfg.barWidth + vizCfg.barGap))) / 2,
+            y: this.scale.height - 20
+        });
+
+        this.lyricsDelay = gameSettings.lyrics.lyricsDelay;
     }
 
     update(time, delta) {
@@ -766,6 +1173,24 @@ class GameScene extends Phaser.Scene {
         const w = this.scale.width;
         const h = this.scale.height;
 
+        // Activate/deactivate the music visualizer when it is needed
+        this.visualizer.update(taPlayer);
+        if (this.pendingChars.length > 0 && taPlayer?.isPlaying){
+            const delayBeforeNextChar = this.pendingChars[0].startTime - taPlayer.timer.position + gameSettings.lyrics.fallTimeMs;
+            if (!this.visualizer.enabled && this.activeChars.length == 0 && delayBeforeNextChar > gameSettings.visualizer.minDelayTrigger){
+                console.log("Enable visualizer");
+                this.visualizer.enable(1500);
+            }
+            else if (this.visualizer.enabled && delayBeforeNextChar < gameSettings.visualizer.minDelayTrigger){
+                console.log("Disable visualizer");
+                setTimeout(() => {
+                    this.visualizer.disable(1000);}, 
+                gameSettings.visualizer.minDelayTrigger / 3);
+            }
+        }
+        else{
+            this.visualizer.enabled = false;
+        }
 
         if (!taPlayer || !taPlayer.isPlaying) return;
         const songTime = taPlayer.timer.position;
@@ -809,7 +1234,9 @@ class GameScene extends Phaser.Scene {
             const yPos = this.charSpawnYPointer.y;
             let glowDuration = gameSettings.spawnGlowDuration;
 
-            if (time >= Math.max(nextChar.startTime - this.fallTime, (this.lastCharStartTime + gameSettings.lyrics.minGapBetweenChars) - this.fallTime)) {
+            const effectiveStartTime = nextChar.startTime + this.lyricsDelay;
+
+            if (time >= Math.max(effectiveStartTime - this.fallTime, (this.lastCharStartTime + gameSettings.lyrics.minGapBetweenChars) - this.fallTime)) {
                 if (this.waveState.advance(time)) {
                     this.charSpawnYPointer.flipDirection();
                     glowDuration = gameSettings.specialFlipCharGlowDuration;
@@ -825,7 +1252,7 @@ class GameScene extends Phaser.Scene {
 
                 this.charGroup.add(charObj);
                 this.lastCharStartTime = nextChar.startTime;
-                this.activeChars.push(new ActiveChar(this, nextChar, charObj, startX, yPos, stripLength, this.charSize / 5, glowDuration, this.charSpawnYPointer));
+                this.activeChars.push(new ActiveChar(this, nextChar, charObj, startX, yPos, stripLength, this.charSize / 5, glowDuration, this.charSpawnYPointer, effectiveStartTime));
                 this.pendingChars.shift();
             } else {
                 break;
@@ -889,7 +1316,7 @@ class GameScene extends Phaser.Scene {
         }
 
         const m = gameSettings.catchParticles.maxSpeed;
-        return (m*dist/(2*k)); // m*Math.sqrt(dist/(2*k))
+        return (m*dist/(2*k));
     }
 
     spawnCatchParticles(){
@@ -897,12 +1324,35 @@ class GameScene extends Phaser.Scene {
         const maxY = this.catcher.y + gameSettings.catcher.height/2;
         const mean = (minY + maxY) / 2;
 
+        const valenceArousal = taPlayer.getValenceArousal(taPlayer.timer.position);
+        let colors = [];
+        if (valenceArousal.a < gameSettings.catchParticles.arousalThresholds[0]){
+            colors = gameSettings.catchParticles.boringColors;
+        }
+        else if (valenceArousal.a < gameSettings.catchParticles.arousalThresholds[1]){
+            colors = gameSettings.catchParticles.mildColors;
+        }
+        else{
+            colors = gameSettings.catchParticles.excitingColors;
+        }
+
+        let effectSize = 0;
+        if (valenceArousal.v < gameSettings.catchParticles.arousalThresholds[0]){
+            effectSize = gameSettings.catchParticles.effectSizes[0];
+        }
+        else if (valenceArousal.v < gameSettings.catchParticles.arousalThresholds[1]){
+            effectSize = gameSettings.catchParticles.effectSizes[1];
+        }
+        else{
+            effectSize = gameSettings.catchParticles.effectSizes[2];
+        }
+
         for (let i = gameSettings.catchParticles.quantity - 1; i >= 0; i--){
             let particle = null;
 
             const spawnX = gameSettings.catcher.xPos + gameSettings.catcher.width/2 + ((Math.random() - 0.3) * 30);
             const spawnY = Math.random() * (maxY - minY) + minY;
-            const color = gameSettings.catchParticles.colors[Math.floor(Math.random() * gameSettings.catchParticles.colors.length)];
+            const color = colors[Math.floor(Math.random() * colors.length)];
             const alpha = Math.random() * (gameSettings.catchParticles.alpha.max - gameSettings.catchParticles.alpha.min) + gameSettings.catchParticles.alpha.min;
 
             particle = this.add.rectangle(
@@ -915,14 +1365,12 @@ class GameScene extends Phaser.Scene {
             );
             particle.setAngle(Math.random() * 360);
 
-            //console.log(`Spawned particle at ${spawnX} - ${spawnY} size ${gameSettings.catchParticles.size} color ${color} alpha ${alpha}`);
-
             const lifespanRange = gameSettings.catchParticles.lifespan.max - gameSettings.catchParticles.lifespan.min;
             const lifespan = Math.random() * lifespanRange + gameSettings.catchParticles.lifespan.min;
 
-            const finalX = spawnX + this.calcEndXPos(spawnY, gameSettings.catchParticles.effectSize);
+            const finalX = spawnX + this.calcEndXPos(spawnY, effectSize);
 
-            this.activeCatchParticles.push({ particle, lifespan, finalX });
+            this.activeCatchParticles.push({ particle, lifespan, finalX, effectSize });
         }
     }
 
@@ -981,6 +1429,7 @@ class GameScene extends Phaser.Scene {
             const particle = item.particle;
             const lifespan = item.lifespan;
             const finalX = item.finalX;
+            const effectSize = item.effectSize;
 
             if (lifespan <= 0){
                 particle.destroy();
@@ -989,7 +1438,7 @@ class GameScene extends Phaser.Scene {
             else{
                 this.activeCatchParticles[i].lifespan -= 1;
 
-                const speed = this.calcPartSpeed(finalX - particle.x, gameSettings.catchParticles.effectSize);
+                const speed = this.calcPartSpeed(finalX - particle.x, effectSize);
                 particle.x += speed;
             }
         }
@@ -1024,6 +1473,17 @@ const config = {
 
 const game = new Phaser.Game(config);
 
-const taPlayer = new Player({ app: { token: gameSettings.api.token }, mediaElement: document.querySelector("#media") });
-taPlayer.addListener({ onTimerReady() { isTextAliveReady = true; } });
+const taPlayer = new Player({ 
+    app: { token: gameSettings.api.token }, 
+    mediaElement: document.querySelector("#media") ,
+    valenceArousalEnabled: true
+});
+taPlayer.addListener({ 
+    onTimerReady() { isTextAliveReady = true; },
+    onPlay() { 
+        if (game.scene.isActive("GameScene")) {
+            game.scene.getScene("GameScene").visualizer?.tryConnect();
+        }
+    }
+});
 taPlayer.createFromSongUrl(gameSettings.api.songUrl);
