@@ -87,7 +87,7 @@ const gameSettings = {
 
         // Characters whose on-screen duration (endTime - startTime) is shorter than this (ms)
         // do not get a trailing strip, because the strip would be too small to be meaningful.
-        minDelayLongChar: 500,
+        minDelayLongChar: 400,
 
         // Spacing : overlap prevention
         minCharSpacing: 20,      // min horizontal pixel gap before triggering a vertical shift
@@ -144,10 +144,6 @@ const gameSettings = {
         speed: 1  // fraction of scene height traveled per second at full velocity
     },
 
-    // Characters with an on-screen duration below this (ms) receive no strip.
-    // Duplicates lyrics.minDelayLongChar : used by ActiveChar directly before lyrics settings are parsed.
-    minDelayLongChar: 400,
-
     // ── Wave / flip pattern ──────────────────────────────────────────────────
     // The spawn pointer periodically reverses direction to create a wave motion.
     // `patterns` is a list of beat-durations (in beats) the pointer travels in one direction
@@ -180,23 +176,27 @@ const gameSettings = {
     },
 
     // Master switch : set to false to disable all particle effects globally
-    globalParticleToggle: false,
+    globalParticleToggle: true,
 
     // ── Catch particle emitter (active config) ────────────────────────────────
     // Tint is not set here; it is overridden per-character in spawnCatchParticles()
     // so each burst matches the caught character's color.
+    // Angle 0° = right; the burst fires rightward (away from the catcher wall) like debris.
     particles: {
-        count: 14,       // number of particles per burst
+        count: 22,
 
-        speedMin: 60,    // minimum particle speed (px/s)
-        speedMax: 160,   // maximum particle speed (px/s)
+        speedMin: 200,
+        speedMax: 550,
 
-        lifespan: 1000,   // particle lifetime (ms)
+        lifespan: 650,
 
-        scaleStart: 2, // initial particle scale
-        scaleEnd: 0,      // final particle scale (shrinks to nothing)
+        scaleStart: 2.5,
+        scaleEnd: 0,
 
-        spread: 360       // emission angle range in degrees (360 = omnidirectional)
+        angleMin: -65,   // cone pointing right: 0° ± 65°
+        angleMax: 65,
+
+        gravityY: 600,   // debris arcs downward after impact
     },
 
     // ── Aura circle ──────────────────────────────────────────────────────────
@@ -209,16 +209,15 @@ const gameSettings = {
 
     // ── Disintegration (caught-character dissolve) ────────────────────────────
     // When a character is caught it freezes at the catcher while its strip drains, then
-    // slides leftward through a filter mask that gradually erases it from the left edge.
+    // its right edge stays anchored at the catcher while scaleX shrinks to 0. Combined
+    // with an alpha fade this makes the left side vanish first — a squishy wall-absorption.
     disintegration: {
-        gradientWidth: 50,      // horizontal width (px) of the soft dissolve edge at the catcher
-        dissolveDuration: 500,  // ms the character takes to travel through the gradient after the strip depletes
-        dissolveDistance: 300,  // px the character moves leftward during the dissolve phase
-        dustCount: 2,           // particles emitted per frame per character while in the gradient zone
+        dissolveDuration: 700,  // ms for the squish-fade after the strip depletes
+        dustCount: 2,           // particles emitted per frame during dissolution
         dustSpeedMin: 600,
         dustSpeedMax: 800,
-        dustLifespan: 250,      // ms each dust particle lives
-        dustScaleStart: 3,      // relative to the 8×8 __particle texture
+        dustLifespan: 250,
+        dustScaleStart: 3,
         dustScaleEnd: 0,
     },
 };
@@ -434,7 +433,7 @@ class ActiveChar {
 
     // STRIP
     createStrip(stripLength, stripHeight) {
-        if (stripLength < gameSettings.minDelayLongChar) {
+        if (stripLength < gameSettings.lyrics.minDelayLongChar) {
             return null;
         }
 
@@ -523,7 +522,6 @@ class ActiveChar {
         const emitter = this.scene.catchEmitter;
         if (!emitter) return;
 
-        // Match particle color to the character's aura color before each burst
         emitter.setParticleTint(this.color);
         emitter.explode(gameSettings.particles.count, this.obj.x, this.obj.y);
     }
@@ -566,15 +564,12 @@ class ActiveChar {
 
     // DISINTEGRATION — called once when the player catches this character
     startDisintegration(dyingStrips, fallDistance, fallTime) {
-        // Fade the aura circle out (same path as a missed character)
         this.destroyVisuals();
 
-        // Retire the strip; pass obj: null so destroyStrips() doesn't also destroy the text object
-        this.maskDelay = 0; // ms to wait before applying the dissolve mask
+        this.dissolveDelay = 0;
         if (this.strip) {
             const stripDuration = (this.strip.width / fallDistance) * fallTime;
-            // The mask only triggers once the strip has fully drained
-            this.maskDelay = stripDuration;
+            this.dissolveDelay = stripDuration;
             dyingStrips.push({
                 strip: this.strip,
                 maxWidth: this.strip.width,
@@ -584,56 +579,42 @@ class ActiveChar {
             });
         }
 
-        // Elapsed real-time counters; updated each frame via delta in updateDisintegration()
-        this.maskElapsed = 0;         // accumulates until >= maskDelay → mask is applied
-        this.maskApplied = false;
-        this.dissolveElapsed = 0;     // accumulates after mask is applied → drives dissolve motion
-    }
-
-    // Applies the Phaser 4 filter mask that clips the character to the right of the catcher.
-    // Called lazily once the strip has fully drained.
-    _applyDissolveMask() {
-        const catcherX = gameSettings.catcher.xPos;
-        const gw = gameSettings.disintegration.gradientWidth;
-        const w = this.scene.scale.width;
-        const h = this.scene.scale.height;
-
-        // In Phaser 4, masks are filter-based: AddMaskShape clips the character to a
-        // rectangle, and blurRadius softens that rectangle's left edge.
-        // Shifting the region's left edge right by blurRadius makes catcherX the
-        // fully-transparent end of the gradient rather than the midpoint.
-        Phaser.Actions.AddMaskShape(this.obj, {
-            shape: 'rectangle',
-            blurRadius: gw / 2,
-            region: new Phaser.Geom.Rectangle(catcherX + gw / 2, 0, w - catcherX - gw / 2, h),
-            useInternal: false,
-        });
+        this.dissolveWait = 0;
+        this.dissolveStarted = false;
+        this.dissolveElapsed = 0;
     }
 
     // Called each frame by GameScene.updateDisintegratingChars() while this character dissolves.
-    // delta is real elapsed time (ms) so strip-drain and dissolve timing stay accurate.
     updateDisintegration(catcherX, delta) {
         const d = gameSettings.disintegration;
 
         // ── Phase 1: hold the character at the catcher while the strip drains ──
-        if (!this.maskApplied) {
-            this.obj.x = catcherX;
-            this.maskElapsed += delta;
-            if (this.maskElapsed >= this.maskDelay) {
-                this.maskApplied = true;
-                this._applyDissolveMask();
+        if (!this.dissolveStarted) {
+            this.obj.x = catcherX + this.obj.width / 2;
+            this.dissolveWait += delta;
+            if (this.dissolveWait >= this.dissolveDelay) {
+                this.dissolveStarted = true;
             }
             return false;
         }
 
-        // ── Phase 2: slide left through the gradient and emit dust ──
+        // ── Phase 2: squish the character into the wall, left edge first ──
+        // The right edge stays anchored at (catcherX + charWidth) while scaleX shrinks
+        // to zero. This makes the left boundary recede rightward — the left side disappears
+        // first. Alpha fades simultaneously. A slight scaleY bulge adds the squishy feel.
         this.dissolveElapsed += delta;
         const t = Math.min(this.dissolveElapsed / d.dissolveDuration, 1);
-        this.obj.x = catcherX - t * d.dissolveDistance;
 
-        // Emit dust spread across the full character height using per-particle explode calls,
-        // since Phaser 4 doesn't support { min, max } Y ranges on the emitter directly
-        if (gameSettings.globalParticleToggle && this.obj.x > catcherX - d.gradientWidth) {
+        const eased = t * t; // ease-in: clings briefly then snaps away
+        const newScaleX = 1 - eased;
+        const rightAnchor = catcherX + this.obj.width;
+
+        this.obj.scaleX = newScaleX;
+        this.obj.x = rightAnchor - (this.obj.width * newScaleX) / 2;
+        this.obj.alpha = 1 - eased;
+        this.obj.scaleY = 1 + 0.25 * Math.sin(Math.PI * t); // bulge peaks at t=0.5
+
+        if (gameSettings.globalParticleToggle) {
             const halfH = this.obj.height / 2;
             const emitter = this.scene.dustEmitter;
             emitter.setParticleTint(this.color);
@@ -643,8 +624,7 @@ class ActiveChar {
             }
         }
 
-        // Destroy once the character has fully crossed the gradient zone
-        if (this.obj.x <= catcherX - d.gradientWidth) {
+        if (t >= 1) {
             this.obj.destroy();
             return true;
         }
@@ -1017,7 +997,6 @@ class GameScene extends Phaser.Scene {
         this.activeChars = [];
         this.pendingChars = [];
         this.disintegratingChars = []; // characters currently dissolving through the catcher mask
-        this.minDelayLongChar = gameSettings.minDelayLongChar;
         this.dyingStrips = [];
         this.fallDistance = (this.scale.width + gameSettings.lyrics.startXOffset) - this.catcher.x;
         this.charSize = parseInt(gameSettings.lyrics.fontSize);
@@ -1069,7 +1048,7 @@ class GameScene extends Phaser.Scene {
             emitting: false,
             lifespan: d.dustLifespan,
             speed: { min: d.dustSpeedMin, max: d.dustSpeedMax },
-            angle: 180,
+            angle: { min: -30, max: 30 },
             scale: { start: d.dustScaleStart, end: d.dustScaleEnd, ease: "quad.out" },
             alpha: { start: 0.8, end: 0, ease: "linear" },
         });
@@ -1091,19 +1070,20 @@ class GameScene extends Phaser.Scene {
             lifespan: pc.lifespan,
             quantity: pc.count,
             speed: { min: pc.speedMin, max: pc.speedMax },
-            angle: { min: 0, max: 360 },
+            angle: { min: pc.angleMin, max: pc.angleMax },
             scale: { start: pc.scaleStart, end: pc.scaleEnd, ease: "quad.out" },
             alpha: { start: 1, end: 0, ease: "linear" },
-            rotate: { min: 0, max: 360 }
+            gravityY: pc.gravityY,
         });
     }
 
     update(time, delta) {
         this.fpsText.setText("FPS: " + Math.round(this.game.loop.actualFps));
 
-        // delta arrives in milliseconds from Phaser; convert once for physics helpers
-        const deltaMs = delta;
-        const deltaSec = delta / 1000;
+        // Cap delta to 100 ms (≈ 10 fps minimum) so a tab-unfocus spike can't throw the
+        // spawn pointer or catcher to an extreme position on the first resumed frame.
+        const deltaMs = Math.min(delta, 100);
+        const deltaSec = deltaMs / 1000;
         const w = this.scale.width;
         const h = this.scale.height;
 
@@ -1163,6 +1143,16 @@ class GameScene extends Phaser.Scene {
             let auraOnSpawn = false;
 
             if (time >= nextChar.startTime - this.fallTime) {
+
+                // If songTime jumped ahead (tab unfocus, TextAlive timer drift, etc.) a character
+                // might be so late that it would already be at or past the catcher the moment it
+                // spawns. Spawning it would trigger the overlap-offset chain for every queued
+                // character and scatter them across the screen. Drop it silently instead.
+                const progress = (time - (nextChar.startTime - this.fallTime)) / this.fallTime;
+                if (progress >= 1 + this.destroyThreshold) {
+                    this.pendingChars.shift();
+                    continue;
+                }
 
                 // check if wavestate changed direction
                 if (this.waveState.advance(time)) {
@@ -1317,8 +1307,7 @@ class GameScene extends Phaser.Scene {
         const char = this.activeChars[idx];
         this.activeChars.splice(idx, 1);
 
-        // Explosion burst only for characters that had an aura (wave-flip moments)
-        if (char.auraOnSpawn) char.spawnCatchParticles();
+        char.spawnCatchParticles();
 
         // Hand the character off to the disintegration path:
         // strip retires normally, aura fades, and the text object dissolves through the mask
