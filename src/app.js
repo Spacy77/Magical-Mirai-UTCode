@@ -10,6 +10,13 @@ const gameSettings = {
     // Volume sent to the TextAlive player (0-100)
     songVolume: 30,
 
+    introVideo: {
+        url: "media/miku.webm",
+        fadeBeforeEndMs: 500,
+        objectFit: "cover",
+        objectPosition: "center center",
+    },
+
     // -- Global palette -------------------------------------------------------
     colors: {
         background: "#111111",   // scene background fill
@@ -257,6 +264,134 @@ const gameSettings = {
 
 const { Player, PlayerOptions } = TextAliveApp;
 let isTextAliveReady = false;
+let isIntroVideoReady = false;
+let introVideoElement = null;
+let introVideoFrame = null;
+
+function getSongTitle() {
+    const song = taPlayer?.data?.song;
+    return song?.name || song?.songName || song?.title || document.title;
+}
+
+function createIntroVideoElement() {
+    const cfg = gameSettings.introVideo;
+    if (!cfg.url) {
+        return null;
+    }
+
+    const video = document.createElement("video");
+    video.preload = "auto";
+    video.playsInline = true;
+    video.controls = false;
+    video.style.position = "fixed";
+    video.style.inset = "0";
+    video.style.width = "100vw";
+    video.style.height = "100vh";
+    video.style.objectFit = cfg.objectFit;
+    video.style.objectPosition = cfg.objectPosition;
+    video.style.pointerEvents = "none";
+    video.style.opacity = "0";
+    video.style.display = "none";
+    video.style.zIndex = "10";
+    video.style.background = "transparent";
+
+    const markReady = () => {
+        if (isIntroVideoReady) return;
+        isIntroVideoReady = true;
+        video.removeEventListener("loadeddata", markReady);
+        video.removeEventListener("canplay", markReady);
+    };
+
+    video.addEventListener("loadeddata", markReady);
+    video.addEventListener("canplay", markReady);
+    video.addEventListener("error", () => {
+        window.setTimeout(() => video.load(), 1000);
+    });
+    video.src = cfg.url;
+    document.body.appendChild(video);
+    video.load();
+
+    return video;
+}
+
+function resetIntroVideo(video) {
+    if (introVideoFrame) {
+        cancelAnimationFrame(introVideoFrame);
+        introVideoFrame = null;
+    }
+
+    video.pause();
+    video.style.opacity = "0";
+    video.style.display = "none";
+
+    try {
+        video.currentTime = 0;
+    } catch (err) {
+        void err;
+    }
+}
+
+function playIntroVideo(onComplete, onPlaybackBlocked) {
+    const video = introVideoElement;
+    if (!video || !isIntroVideoReady) {
+        onPlaybackBlocked();
+        return;
+    }
+
+    let finished = false;
+    const fadeSeconds = gameSettings.introVideo.fadeBeforeEndMs / 1000;
+
+    const finish = () => {
+        if (finished) return;
+        finished = true;
+        video.removeEventListener("ended", finish);
+        video.removeEventListener("error", abort);
+        resetIntroVideo(video);
+        onComplete();
+    };
+
+    const abort = () => {
+        if (finished) return;
+        finished = true;
+        video.removeEventListener("ended", finish);
+        video.removeEventListener("error", abort);
+        resetIntroVideo(video);
+        video.load();
+        onPlaybackBlocked();
+    };
+
+    const updateOpacity = () => {
+        const duration = video.duration;
+        if (Number.isFinite(duration) && duration > 0 && fadeSeconds > 0) {
+            const remaining = duration - video.currentTime;
+            const opacity = remaining <= fadeSeconds
+                ? Phaser.Math.Clamp(remaining / fadeSeconds, 0, 1)
+                : 1;
+            video.style.opacity = String(opacity);
+        } else {
+            video.style.opacity = "1";
+        }
+
+        if (!finished) {
+            introVideoFrame = requestAnimationFrame(updateOpacity);
+        }
+    };
+
+    video.removeEventListener("ended", finish);
+    video.removeEventListener("error", abort);
+    resetIntroVideo(video);
+    video.style.display = "block";
+    video.style.opacity = "1";
+    video.addEventListener("ended", finish);
+    video.addEventListener("error", abort);
+
+    const playPromise = video.play();
+    introVideoFrame = requestAnimationFrame(updateOpacity);
+
+    if (playPromise?.catch) {
+        playPromise.catch(abort);
+    }
+}
 
 class ComboCounter {
     constructor(scene) {
@@ -1098,7 +1233,7 @@ class LoadScene extends Phaser.Scene {
     }
     update() {
         this.spinner.rotation += gameSettings.spinner.rotationSpeed;
-        if (isTextAliveReady) this.scene.start("TitleScene");
+        if (isTextAliveReady && isIntroVideoReady) this.scene.start("TitleScene");
     }
 }
 
@@ -1107,17 +1242,66 @@ class TitleScene extends Phaser.Scene {
     create() {
         const cx = this.scale.width / 2;
         const cy = this.scale.height / 2;
-        const playButtonBg = this.add.rectangle(cx, cy, gameSettings.button.width, gameSettings.button.height, gameSettings.colors.primary);
-        playButtonBg.setInteractive({ useHandCursor: true });
-        this.add.text(cx, cy, "PLAY", {
+        this.introStarted = false;
+        this.backgroundTime = 0;
+        this.FLBackground = new FLTimelineBackground(this, this.scale.width, this.scale.height);
+        this.FLBackground.setDepth(-10000);
+        this.titleText = this.add.text(cx, cy - 140, getSongTitle(), {
+            fontFamily: gameSettings.fonts.main,
+            fontSize: "48px",
+            color: gameSettings.colors.textLight,
+            fontStyle: "bold",
+            stroke: "#000000",
+            strokeThickness: 6,
+            align: "center",
+            wordWrap: { width: Math.min(this.scale.width * 0.85, 1000), useAdvancedWrap: true }
+        }).setOrigin(0.5).setDepth(5);
+        this.playButtonBg = this.add.rectangle(cx, cy, gameSettings.button.width, gameSettings.button.height, gameSettings.colors.primary);
+        this.playButtonBg.setInteractive({ useHandCursor: true });
+        this.playButtonText = this.add.text(cx, cy, "PLAY", {
             fontFamily: gameSettings.fonts.ui,
             fontSize: gameSettings.button.fontSize,
             color: gameSettings.colors.textLight,
             fontStyle: "bold"
-        }).setOrigin(0.5);
-        playButtonBg.on('pointerover', () => { playButtonBg.fillColor = gameSettings.colors.primaryHover; });
-        playButtonBg.on('pointerout', () => { playButtonBg.fillColor = gameSettings.colors.primary; });
-        playButtonBg.on('pointerdown', () => { taPlayer.requestPlay(); this.scene.start("GameScene"); });
+        }).setOrigin(0.5).setDepth(6);
+        this.playButtonBg.on('pointerover', () => {
+            if (!this.introStarted) this.playButtonBg.fillColor = gameSettings.colors.primaryHover;
+        });
+        this.playButtonBg.on('pointerout', () => {
+            if (!this.introStarted) this.playButtonBg.fillColor = gameSettings.colors.primary;
+        });
+        this.playButtonBg.on('pointerdown', () => this.startIntro());
+    }
+
+    update(time, delta) {
+        this.backgroundTime += Math.min(delta, 100);
+        const startX = this.scale.width + gameSettings.lyrics.startXOffset;
+        const catcherX = gameSettings.catcher.xPos - gameSettings.catcher.width;
+        const fallTime = gameSettings.lyrics.fallTimeMs * gameSettings.lyrics.fallTimeMsMultiplier;
+        this.FLBackground.update(this.backgroundTime, startX, catcherX, fallTime);
+    }
+
+    startIntro() {
+        if (this.introStarted) return;
+        this.introStarted = true;
+        this.playButtonBg.disableInteractive();
+        this.playButtonBg.fillColor = gameSettings.colors.primaryHover;
+        this.playButtonBg.setAlpha(0.65);
+        this.playButtonText.setAlpha(0.65);
+        playIntroVideo(() => this.startGame(), () => this.resetPlayButton());
+    }
+
+    resetPlayButton() {
+        this.introStarted = false;
+        this.playButtonBg.setInteractive({ useHandCursor: true });
+        this.playButtonBg.fillColor = gameSettings.colors.primary;
+        this.playButtonBg.setAlpha(1);
+        this.playButtonText.setAlpha(1);
+    }
+
+    startGame() {
+        taPlayer.requestPlay();
+        this.scene.start("GameScene");
     }
 }
 
@@ -1511,6 +1695,7 @@ class GameScene extends Phaser.Scene {
 document.body.style.backgroundColor = gameSettings.colors.background;
 document.body.style.margin = "0";
 document.body.style.overflow = "hidden";
+introVideoElement = createIntroVideoElement();
 
 const config = {
     type: Phaser.AUTO,

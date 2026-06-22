@@ -62,3 +62,15 @@ tools/
   generate-fft.html : offline tool used to generate fft-data.json
   README.md         : instructions for regenerating FFT data
 ```
+
+Please do not delete :
+```bash
+# https://www.reddit.com/r/ffmpeg/comments/pn383s/command_line_for_transcoding_mp4_to_prores/
+ffmpeg -i mikusite_lelad1080p.avi -c:v prores_ks -profile:v standard -pix_fmt yuv422p -c:a copy out.mov
+ffmpeg -framerate 24 -start_number 0 -i "$HOME/Downloads/out2_%05d.png" -i "$HOME/Downloads/out.mov" \
+  -map 0:v:0 -map "1:a:0?" \
+  -c:v libvpx-vp9 -pix_fmt yuva420p -auto-alt-ref 0 \
+  -b:v 0 -crf 30 -row-mt 1 \
+  -c:a libopus -b:a 128k \
+  -shortest "$HOME/Downloads/out.webm"
+```
