@@ -2,10 +2,13 @@ const gameSettings = {
     // -- TextAlive API --------------------------------------------------------
     api: {
         token: "1O5BTRwWsXT6TfAP",
-        songUrl: "https://piapro.jp/t/B3yJ/20251215061727" // go to textAlive website to find the link, it is not directly on piapro
+        songUrl: "https://piapro.jp/t/B3yJ/20251215061727", // go to textAlive website to find the link, it is not directly on piapro
+        // Path to pre-computed FFT JSON (run tools/generate-fft.html to create it).
+        // Set to "media/fft-data.json" after placing the generated file there.
+        fftDataUrl: "media/fft-data.json",
     },
     // Volume sent to the TextAlive player (0-100)
-    songVolume: 10,
+    songVolume: 30,
 
     // -- Global palette -------------------------------------------------------
     colors: {
@@ -231,7 +234,7 @@ const gameSettings = {
     // Segmented bar equalizer driven by TextAlive beat/arousal data.
     // Shown during long silences; hidden as soon as a lyric appears.
     visualizer: {
-        numBars: 15,
+        numBars: 30,
         barWidth: 60,
         barGap: 5,
         maxHeight: 800,
@@ -239,6 +242,7 @@ const gameSettings = {
         segmentGap: 4,
         reflectionSegments: 4,
         reflectionAlpha: 0.25,
+        gain: 6,           // multiplier applied to FFT values before display (boost faint bars)
         smoothingUp: 0.9,    // bars rise quickly
         smoothingDown: 0.06, // bars fall slowly
         minLevel: 0.05,      // bars never fully collapse to zero
@@ -1010,79 +1014,20 @@ class MusicVisualizer {
         this.segmentColors = this._buildGradient();
         this.graphics = scene.add.graphics().setDepth(-5).setAlpha(0);
         this.enabled = false;
-
-        // Web Audio state — populated by tryConnect()
-        this._audioCtx    = null;
-        this._analyser    = null;
-        this._fftData     = null;
-        this._connected   = false;
-        this._corsBlocked = false;
-    }
-
-    // Call after taPlayer fires onPlay. Finds the media element TextAlive created
-    // inside mediaContainer (#media div), wires it to an AnalyserNode.
-    tryConnect(mediaContainer) {
-        if (this._connected || this._corsBlocked) return;
-
-        const el = mediaContainer.querySelector('video') ?? mediaContainer.querySelector('audio');
-        if (!el) return;
-
-        try {
-            this._audioCtx = new AudioContext();
-            this._analyser = this._audioCtx.createAnalyser();
-            this._analyser.fftSize = 64;               // 32 bins — enough for 15 bars
-            this._analyser.smoothingTimeConstant = 0.8;
-            this._fftData  = new Uint8Array(this._analyser.frequencyBinCount);
-
-            const source = this._audioCtx.createMediaElementSource(el);
-            source.connect(this._analyser);
-            this._analyser.connect(this._audioCtx.destination);
-            this._audioCtx.resume();
-            this._connected = true;
-            console.log('[Visualizer] Web Audio connected — real FFT active');
-        } catch (e) {
-            console.warn('[Visualizer] Web Audio failed, using TextAlive fallback:', e.message);
-            this._corsBlocked = true;
-            if (this._audioCtx) { this._audioCtx.close(); this._audioCtx = null; }
-        }
     }
 
     update(taPlayer) {
-        if (this._connected) {
-            this._readRealFFT();
-        } else {
-            this._readBeatFallback(taPlayer);
-        }
+        if (precomputedFFTData) this._readPrecomputedFFT(taPlayer.timer.position);
         this._draw();
     }
 
-    _readRealFFT() {
+    _readPrecomputedFFT(positionMs) {
+        const d   = precomputedFFTData;
         const cfg = gameSettings.visualizer;
-        this._analyser.getByteFrequencyData(this._fftData);
-
-        const binsPerBar = Math.floor(this._fftData.length / cfg.numBars);
+        const frameIndex = Math.min(Math.floor(positionMs / d.intervalMs), d.frames.length - 1);
+        const frame = d.frames[frameIndex];
         for (let b = 0; b < cfg.numBars; b++) {
-            let sum = 0;
-            for (let k = 0; k < binsPerBar; k++) sum += this._fftData[b * binsPerBar + k];
-            const target = Phaser.Math.Clamp(sum / binsPerBar / 255, 0, 1);
-            const alpha  = target > this.levels[b] ? cfg.smoothingUp : cfg.smoothingDown;
-            this.levels[b] += (target - this.levels[b]) * alpha;
-        }
-    }
-
-    _readBeatFallback(taPlayer) {
-        const cfg = gameSettings.visualizer;
-        const pos = taPlayer.timer.position;
-        const va  = taPlayer.getValenceArousal?.(pos) ?? { a: 0, v: 0.5 };
-        const arousal = (va.a + 1) / 2;
-        const beat  = taPlayer.findBeat?.(pos);
-        const pulse = beat ? Math.pow(Math.max(0, 1 - beat.progress(pos)), 8) : 0;
-        const energy = Phaser.Math.Clamp(arousal * 0.6 + pulse * 0.4, 0, 1);
-
-        const center = (cfg.numBars - 1) / 2;
-        for (let b = 0; b < cfg.numBars; b++) {
-            const dist   = Math.abs(b - center) / center;
-            const target = Phaser.Math.Clamp(energy * Math.exp(-dist * dist * 3) + cfg.minLevel, 0, 1);
+            const target = Math.min(1, (frame[b] ?? 0) / 255 * cfg.gain);
             const alpha  = target > this.levels[b] ? cfg.smoothingUp : cfg.smoothingDown;
             this.levels[b] += (target - this.levels[b]) * alpha;
         }
@@ -1238,7 +1183,7 @@ class GameScene extends Phaser.Scene {
         this.createDustEmitter();
 
         const vizCfg = gameSettings.visualizer;
-        const vizX = (this.scale.width - vizCfg.numBars * (vizCfg.barWidth + vizCfg.barGap)) / 2;
+        const vizX = (this.scale.width - (vizCfg.numBars * vizCfg.barWidth + (vizCfg.numBars - 1) * vizCfg.barGap)) / 2;
         this.visualizer = new MusicVisualizer(this, vizX, this.scale.height - 20);
     }
 
@@ -1362,7 +1307,7 @@ class GameScene extends Phaser.Scene {
                 // If songTime jumped ahead (tab unfocus, TextAlive timer drift, etc.) a character
                 // might be so late that it would already be at or past the catcher the moment it
                 // spawns. Spawning it would trigger the overlap-offset chain for every queued
-                // character and scatter them across the screen. Drop it silently instead.
+                // character and scatter them across the screen. Drop it silently instead. (was a weird bug encountered time to time)
                 const progress = (time - (nextChar.startTime - this.fallTime)) / this.fallTime;
                 if (progress >= 1 + this.destroyThreshold) {
                     this.pendingChars.shift();
@@ -1579,15 +1524,24 @@ const config = {
 };
 
 const game = new Phaser.Game(config);
+
+let precomputedFFTData = null;
+
 const taPlayer = new Player({ app: { token: gameSettings.api.token }, mediaElement: document.querySelector("#media"), valenceArousalEnabled: true, vocalAmplitudeEnabled: true });
 
 taPlayer.addListener({
     onTimerReady() { isTextAliveReady = true; },
-    onPlay() {
-        const scene = game.scene.getScene('GameScene');
-        if (scene?.visualizer) {
-            scene.visualizer.tryConnect(document.querySelector('#media'));
-        }
-    }
 });
 taPlayer.createFromSongUrl(gameSettings.api.songUrl);
+
+if (gameSettings.api.fftDataUrl) {
+    fetch(gameSettings.api.fftDataUrl)
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(data => {
+            if (data.numBars !== gameSettings.visualizer.numBars)
+                console.warn(`[Visualizer] fft-data numBars (${data.numBars}) ≠ app numBars (${gameSettings.visualizer.numBars}) — regenerate with matching settings`);
+            precomputedFFTData = data;
+            console.log(`[Visualizer] Pre-computed FFT loaded: ${data.frames.length} frames, ${(data.durationMs / 1000).toFixed(1)}s`);
+        })
+        .catch(err => console.warn('[Visualizer] Failed to load fft-data.json:', err.message));
+}
