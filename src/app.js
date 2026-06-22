@@ -12,7 +12,6 @@ const gameSettings = {
         textMain: "#E0E0E0",
         textLight: "#FFFFFF",
         textPrimary: "#8A2BE2",
-        glow: 0x00FFFF,
         strip: 0xCCCCCC,
         pointer: 0x00FFFF
     },
@@ -41,7 +40,7 @@ const gameSettings = {
         minDelayNewYPos: 500,
         minDelayLongChar: 500,
         minGapBetweenChars: 100,
-        lyricsDelay: 170
+        lyricsDelay: 200
     },
     backgroundLyrics: {
         fontSize: "450px",
@@ -53,9 +52,9 @@ const gameSettings = {
         fadeOutSpeed: 5
     },
     catchParticles: {
-        maxSpeed: 50,
-        lifespan: { min: 5, max: 30 },
-        quantity: 8,
+        maxSpeed: 10,
+        lifespan: { min: 30, max: 100 },
+        quantity: 4,
         size: 45,
         boringColors: [0x274c5e, 0x3a7d7a, 0x7fb8aa, 0xd9efe7, 0xfdfaf4],
         mildColors: [0x6d3fa9, 0xa37ad9, 0x2e7d5b, 0x7ecf9a, 0xf3f0ea, 0xe12885, 0x137a7f],
@@ -84,11 +83,6 @@ const gameSettings = {
     charSpawnYPointer: { speed: 1 },
 
     minDelayLongChar: 400,
-
-    spawnGlowDuration: 1000,
-    specialFlipCharGlowDuration: 10000,
-
-    glow: { outerStrength: 2, innerStrength: 1, knockout: false },
 
     wave: {
         beatDuration: 500,
@@ -410,7 +404,7 @@ class CharSpawnYPointer {
 }
 
 class ActiveChar {
-    constructor(scene, char, obj, startX, yPos, stripLength, stripHeight, glowDuration, charSpawnYPointerRef, effectiveStartTime) {
+    constructor(scene, char, obj, startX, yPos, stripLength, stripHeight, charSpawnYPointerRef, effectiveStartTime) {
         this.scene = scene;
         this.char = char;
         this.obj = obj;
@@ -419,11 +413,6 @@ class ActiveChar {
         this.charSpawnYPointer = charSpawnYPointerRef;
         this.effectiveStartTime = effectiveStartTime;
         this.strip = this.createStrip(stripLength, stripHeight);
-        this.glowDuration = glowDuration;
-        this.glowRemaining = glowDuration;
-        this.glowEffect = this.createGlowEffect();
-        this.glowRemaining = glowDuration;
-        this.glowEffect = this.createGlowEffect();
     }
 
     createStrip(stripLength, stripHeight) {
@@ -450,16 +439,10 @@ class ActiveChar {
         return strip;
     }
 
-    createGlowEffect() {
-        this.glowEffect = this.obj.preFX.addGlow(gameSettings.colors.glow, gameSettings.glow.outerStrength, gameSettings.glow.innerStrength, gameSettings.glow.knockout);
-        return this.glowEffect;
-    }
-
     update(time, startX, catcherX, fallTime, delta, destroyThreshold, fallDistance, charSize, dyingStrips) {
         const progress = (time - (this.effectiveStartTime - fallTime)) / fallTime;
 
         this.obj.x = startX - (startX - catcherX) * progress;
-        this.updateGlow(delta);
         this.updateStripPosition(startX, catcherX, progress, charSize);
 
         if (progress > 1 + destroyThreshold) {
@@ -470,22 +453,6 @@ class ActiveChar {
         return false;
     }
 
-    updateGlow(delta) {
-        if (this.glowEffect == null) {
-            return;
-        }
-
-        if (this.glowRemaining > 0) {
-            this.glowRemaining = Math.max(0, this.glowRemaining - delta);
-            const glowStrength = this.glowRemaining / this.glowDuration;
-            this.glowEffect.outerStrength = gameSettings.glow.outerStrength * glowStrength;
-            this.glowEffect.innerStrength = gameSettings.glow.innerStrength * glowStrength;
-            return;
-        }
-
-        this.destroyGlow();
-    }
-
     updateStripPosition(startX, catcherX, progress, charSize) {
         if (this.strip != null) {
             this.strip.x = startX - (startX - catcherX) * progress + charSize / 2;
@@ -493,7 +460,6 @@ class ActiveChar {
     }
 
     retire(dyingStrips, fallDistance, fallTime) {
-        this.destroyGlow();
 
         if (this.strip == null) {
             this.obj.destroy();
@@ -503,30 +469,31 @@ class ActiveChar {
         const stripDuration = (this.strip.width / fallDistance) * fallTime;
         dyingStrips.push({ strip: this.strip, maxWidth: this.strip.width, progress: 0, obj: this.obj, stripDuration: stripDuration });
     }
-
-    destroyGlow() {
-        if (this.glowEffect != null) {
-            this.glowEffect.setActive(false);
-            this.glowEffect = null;
-        }
-    }
 }
 
 class MusicalBackdrop {
     constructor(scene) {
-        // defaults to disabled, call enable() to show
         this.scene = scene;
         this.scroll = 0;
         this.pulse = 0;
-        this.backdropGraphics = scene.add.graphics().setDepth(-10);
-        this.gridGraphics = scene.add.graphics().setDepth(-9);
-        this.clipGraphics = scene.add.graphics().setDepth(-8);
-        this.playheadGraphics = scene.add.graphics().setDepth(-7);
-        this.opacity = 0;
         this.enabled = false;
         this.state_change_time = 0;
+        this.opacity = 0;
         this.trackSeed = [0.32, 0.68, 0.45, 0.82, 0.54, 0.74, 0.38, 0.62];
         this.clipColors = [0x8a2be2, 0x9d4edd, 0x7b2cbf, 0xc77dff, 0x5a189a, 0xb5179e];
+
+        // ── Un seul objet graphics au lieu de 4 → 4x moins de clear() par frame
+        this.graphics = scene.add.graphics().setDepth(-10);
+
+        // ── Backdrop statique pré-rendu en RenderTexture ──────────────────────
+        // Le fond sombre ne change jamais → on le dessine une seule fois
+        this.backdropTexture = null;
+        this._backdropDirty  = true; // force le premier rendu
+        this._lastW = 0;
+        this._lastH = 0;
+
+        // ── Throttle : ne redessine qu'une frame sur deux ─────────────────────
+        this._skipFrame = false;
     }
 
     enable(time) {
@@ -539,167 +506,190 @@ class MusicalBackdrop {
         this.state_change_time = time;
     }
 
+    /**
+     * Construit (ou reconstruit si la taille a changé) la RenderTexture
+     * du fond statique. Appelé une seule fois tant que la taille ne change pas.
+     */
+    _rebuildBackdropTexture(leftGutter, top, usableHeight, sceneWidth, sceneHeight) {
+        if (this.backdropTexture) this.backdropTexture.destroy();
+
+        this.backdropTexture = this.scene.add.renderTexture(0, 0, sceneWidth, sceneHeight)
+            .setDepth(-11)
+            .setAlpha(0); // invisible par défaut, alpha géré par update()
+
+        const g = this.scene.make.graphics({ add: false });
+        g.fillStyle(0x0b0d12, 0.86);
+        g.fillRect(0, 0, sceneWidth, sceneHeight);
+        g.fillStyle(0x151824, 0.72);
+        g.fillRect(leftGutter, top - 22, sceneWidth - leftGutter, usableHeight + 44);
+        g.fillStyle(0x10131b, 0.9);
+        g.fillRect(0, top - 22, leftGutter, usableHeight + 44);
+        this.backdropTexture.draw(g, 0, 0);
+        g.destroy();
+
+        this._backdropDirty = false;
+        this._lastW = sceneWidth;
+        this._lastH = sceneHeight;
+    }
+
     update(time, delta, sceneWidth, sceneHeight) {
-        const baseOpacity = 0.45;
-        const targetOpacity = this.enabled ? 1 : baseOpacity;
+        // ── Throttle : saute une frame sur deux ──────────────────────────────
+        this._skipFrame = !this._skipFrame;
+        if (this._skipFrame) return;
+
+        // ── Opacité ───────────────────────────────────────────────────────────
+        const baseOpacity  = 0.45;
         const fadeDuration = this.enabled ? 1000 : gameSettings.backdrop.musicalBackdropEndLeadTime;
         const fadeProgress = Phaser.Math.Clamp((time - this.state_change_time) / fadeDuration, 0, 1);
 
-        if (this.enabled) {
-            this.opacity = Phaser.Math.Easing.Quartic.Out(fadeProgress);
-        } else {
-            this.opacity = Phaser.Math.Linear(this.opacity || baseOpacity, targetOpacity, Phaser.Math.Easing.Quartic.Out(fadeProgress));
-        }
+        this.opacity = this.enabled
+            ? Phaser.Math.Easing.Quartic.Out(fadeProgress)
+            : Phaser.Math.Linear(this.opacity || baseOpacity, baseOpacity,
+                Phaser.Math.Easing.Quartic.Out(fadeProgress));
 
         const layerAlpha = Phaser.Math.Clamp(this.opacity, baseOpacity, 1);
-        this.backdropGraphics.setAlpha(layerAlpha);
-        this.gridGraphics.setAlpha(layerAlpha);
-        this.clipGraphics.setAlpha(layerAlpha);
-        this.playheadGraphics.setAlpha(layerAlpha);
+        this.graphics.setAlpha(layerAlpha);
+
+        // ── Layout ────────────────────────────────────────────────────────────
+        const leftGutter  = Math.max(110, sceneWidth * 0.11);
+        const rightEdge   = sceneWidth + 40;
+        const top         = Math.max(44, sceneHeight * 0.08);
+        const bottom      = sceneHeight - Math.max(58, sceneHeight * 0.08);
+        const usableHeight = Math.max(180, bottom - top);
+
+        // ── Backdrop statique ─────────────────────────────────────────────────
+        if (this._backdropDirty || sceneWidth !== this._lastW || sceneHeight !== this._lastH) {
+            this._rebuildBackdropTexture(leftGutter, top, usableHeight, sceneWidth, sceneHeight);
+        }
+        this.backdropTexture.setAlpha(layerAlpha);
+
+        // ── Paramètres dynamiques ──────────────────────────────────────────────
+        // trackCount réduit : 3 max au lieu de 8 → 3x moins de clips dessinés
+        const trackCount  = Phaser.Math.Clamp(Math.floor(usableHeight / 72), 3, 5);
+        const trackGap    = 8;
+        const trackHeight = (usableHeight - trackGap * (trackCount - 1)) / trackCount;
+        const barWidth    = Math.max(120, sceneWidth / 8);
+        const minorWidth  = barWidth / 4;
+        const clipSpacing = barWidth * 1.42;
+        const accentNumeric  = gameSettings.colors.pointer;
 
         this.scroll += delta * (this.enabled ? 72 : 42);
-        this.pulse = 0.5 + Math.sin(time * 0.006) * 0.5;
+        // Pulse arrondi à 2 décimales pour éviter les recalculs inutiles
+        this.pulse = Math.round((0.5 + Math.sin(time * 0.006) * 0.5) * 100) / 100;
 
-        const accentNumeric = gameSettings.colors.pointer;
-        const leftGutter = Math.max(110, sceneWidth * 0.11);
-        const rightEdge = sceneWidth + 40;
-        const top = Math.max(44, sceneHeight * 0.08);
-        const bottom = sceneHeight - Math.max(58, sceneHeight * 0.08);
-        const usableHeight = Math.max(180, bottom - top);
-        const trackCount = Phaser.Math.Clamp(Math.floor(usableHeight / 72), 4, 8);
-        const trackGap = 8;
-        const trackHeight = (usableHeight - trackGap * (trackCount - 1)) / trackCount;
-        const barWidth = Math.max(120, sceneWidth / 8);
-        const minorWidth = barWidth / 4;
-        const clipSpacing = barWidth * 1.42;
-        const clipCycleWidth = clipSpacing * 8;
+        this.graphics.clear();
 
-        this.backdropGraphics.clear();
-        this.backdropGraphics.fillStyle(0x0b0d12, 0.86);
-        this.backdropGraphics.fillRect(0, 0, sceneWidth, sceneHeight);
-        this.backdropGraphics.fillStyle(0x151824, 0.72);
-        this.backdropGraphics.fillRect(leftGutter, top - 22, sceneWidth - leftGutter, usableHeight + 44);
-        this.backdropGraphics.fillStyle(0x10131b, 0.9);
-        this.backdropGraphics.fillRect(0, top - 22, leftGutter, usableHeight + 44);
-
-        this.gridGraphics.clear();
-        this.gridGraphics.lineStyle(1, 0xffffff, 0.05);
+        // ── Grille (lignes horizontales + verticales) ─────────────────────────
+        this.graphics.lineStyle(1, 0xffffff, 0.05);
         for (let i = 0; i <= trackCount; i++) {
             const y = top + i * (trackHeight + trackGap) - trackGap / 2;
-            this.gridGraphics.lineBetween(0, y, rightEdge, y);
+            this.graphics.lineBetween(0, y, rightEdge, y);
         }
 
         const firstMinor = leftGutter - (this.scroll % minorWidth);
         for (let x = firstMinor; x < rightEdge; x += minorWidth) {
             const isBar = Math.round((x - firstMinor) / minorWidth) % 4 === 0;
-            this.gridGraphics.lineStyle(isBar ? 2 : 1, isBar ? accentNumeric : 0xffffff, isBar ? 0.17 : 0.055);
-            this.gridGraphics.lineBetween(x, top - 22, x, bottom + 22);
+            this.graphics.lineStyle(
+                isBar ? 2 : 1,
+                isBar ? accentNumeric : 0xffffff,
+                isBar ? 0.17 : 0.055
+            );
+            this.graphics.lineBetween(x, top - 22, x, bottom + 22);
         }
 
-        this.clipGraphics.clear();
+        // ── Clips ─────────────────────────────────────────────────────────────
+        // fillRect au lieu de fillRoundedRect : ~5x plus rapide
+        // 5 clips max au lieu de 8 : moins de draw calls
         for (let i = 0; i < trackCount; i++) {
-            const trackY = top + i * (trackHeight + trackGap);
+            const trackY    = top + i * (trackHeight + trackGap);
             const laneColor = this.clipColors[i % this.clipColors.length];
             const trackNameWidth = leftGutter - 28;
 
-            this.clipGraphics.fillStyle(laneColor, 0.12);
-            this.clipGraphics.fillRect(16, trackY, trackNameWidth, trackHeight);
-            this.clipGraphics.lineStyle(1, laneColor, 0.18);
-            this.clipGraphics.strokeRect(16, trackY, trackNameWidth, trackHeight);
-            this.clipGraphics.fillStyle(laneColor, 0.18 + this.pulse * 0.06);
-            this.clipGraphics.fillRect(26, trackY + 10, 8, trackHeight - 20);
+            // En-tête de piste (gutter gauche)
+            this.graphics.fillStyle(laneColor, 0.12);
+            this.graphics.fillRect(16, trackY, trackNameWidth, trackHeight);
+            this.graphics.lineStyle(1, laneColor, 0.18);
+            this.graphics.strokeRect(16, trackY, trackNameWidth, trackHeight);  // strokeRect, pas strokeRoundedRect
+            this.graphics.fillStyle(laneColor, 0.18 + this.pulse * 0.06);
+            this.graphics.fillRect(26, trackY + 10, 8, trackHeight - 20);
 
-            for (let c = 0; c < 8; c++) {
-                const seed = this.trackSeed[(i + c + this.trackSeed.length) % this.trackSeed.length];
+            const travel      = this.scroll * (0.55 + i * 0.04);
+            const cycleOffset = travel % (clipSpacing * 1000); // grand cycle pour éviter les resets
+
+            // Calcule les indices de clips visibles (de hors-écran gauche à hors-écran droit)
+            const firstC = Math.floor((cycleOffset - leftGutter - 80) / clipSpacing) - 1;
+            const lastC  = Math.ceil((cycleOffset + rightEdge + 80) / clipSpacing) + 1;
+
+            for (let c = firstC; c <= lastC; c++) {
+                // Modulo pour réutiliser les seeds en boucle
+                const seedIdx  = ((i + c) % this.trackSeed.length + this.trackSeed.length) % this.trackSeed.length;
+                const seed     = this.trackSeed[seedIdx];
                 const clipWidth = barWidth * (0.72 + seed * 0.9);
-                const travel = this.scroll * (0.55 + i * 0.04);
-                const cycleOffset = travel % clipCycleWidth;
-                let clipX = leftGutter + c * clipSpacing - cycleOffset;
-                const clipY = trackY + 8 + (i % 2) * 3;
-                const clipHeight = trackHeight - 16 - (i % 3) * 4;
+                const clipX    = leftGutter + c * clipSpacing - cycleOffset;
+                const clipY    = trackY + 8 + (i % 2) * 3;
+                const clipH    = trackHeight - 16 - (i % 3) * 4;
 
-                if (clipX + clipWidth < -80) {
-                    clipX += clipCycleWidth;
-                }
+                // Filtre les clips hors de la zone visible
+                if (clipX > rightEdge + 80 || clipX + clipWidth < -80) continue;
 
-                if (clipX > rightEdge + 80 || clipX + clipWidth < -80) {
-                    continue;
-                }
+                this.graphics.fillStyle(laneColor, 0.16 + (this.enabled ? 0.1 : 0));
+                this.graphics.fillRect(clipX, clipY, clipWidth, clipH);
+                this.graphics.lineStyle(1, laneColor, 0.34);
+                this.graphics.strokeRect(clipX, clipY, clipWidth, clipH);
 
-                this.clipGraphics.fillStyle(laneColor, 0.16 + (this.enabled ? 0.1 : 0));
-                this.clipGraphics.fillRoundedRect(clipX, clipY, clipWidth, clipHeight, 6);
-                this.clipGraphics.lineStyle(1, laneColor, 0.34);
-                this.clipGraphics.strokeRoundedRect(clipX, clipY, clipWidth, clipHeight, 6);
-
-                if (i % 3 === 1) {
-                    this.drawMidiNotes(this.clipGraphics, clipX, clipY, clipWidth, clipHeight, laneColor, time, i, c);
-                } else if (i % 3 === 2) {
-                    this.drawAutomation(this.clipGraphics, clipX, clipY, clipWidth, clipHeight, laneColor, time, i);
-                } else {
-                    this.drawWaveform(this.clipGraphics, clipX, clipY, clipWidth, clipHeight, laneColor, time, i);
+                if (i % 3 === 0) {
+                    this.drawWaveform(clipX, clipY, clipWidth, clipH, laneColor, time, i);
+                } else if (i % 3 === 1) {
+                    this.drawMidiNotes(clipX, clipY, clipWidth, clipH, laneColor, i, c);
                 }
             }
         }
 
+        // ── Playhead ──────────────────────────────────────────────────────────
         this.drawPlayhead(leftGutter, top - 28, bottom + 28, sceneWidth, accentNumeric);
     }
 
-    drawWaveform(graphics, x, y, width, height, color, time, trackIndex) {
+    // Waveform réduite : 8 steps au lieu de 18 → 2.25x moins de lineBetween
+    drawWaveform(x, y, width, height, color, time, trackIndex) {
         const centerY = y + height / 2;
-        const steps = 18;
+        const steps   = 8; // ← était 18
 
-        graphics.lineStyle(2, color, 0.33);
+        this.graphics.lineStyle(2, color, 0.33);
         for (let i = 0; i < steps; i++) {
-            const px = x + (i / steps) * width;
+            const px  = x + (i / steps) * width;
             const amp = Math.sin(time * 0.004 + i * 0.9 + trackIndex) * height * 0.22;
-            graphics.lineBetween(px, centerY - amp, px + width / steps * 0.46, centerY + amp * 0.55);
+            this.graphics.lineBetween(px, centerY - amp, px + width / steps * 0.46, centerY + amp * 0.55);
         }
     }
 
-    drawMidiNotes(graphics, x, y, width, height, color, time, trackIndex, clipIndex) {
-        const rows = 5;
+    // MidiNotes sans fillRoundedRect → fillRect, et 6 notes au lieu de 10
+    drawMidiNotes(x, y, width, height, color, trackIndex, clipIndex) {
+        const rows       = 5;
         const noteHeight = Math.max(3, height / 9);
 
-        graphics.fillStyle(color, 0.3);
-        for (let i = 0; i < 10; i++) {
-            const rowIndex = i * 2 + trackIndex + clipIndex;
-            const row = ((rowIndex % rows) + rows) % rows;
-            const noteX = x + 12 + i * (width - 24) / 10;
-            const noteY = y + 10 + row * (height - 20) / rows;
+        this.graphics.fillStyle(color, 0.3);
+        for (let i = 0; i < 6; i++) { // ← était 10
+            const rowIndex  = i * 2 + trackIndex + clipIndex;
+            const row       = ((rowIndex % rows) + rows) % rows;
+            const noteX     = x + 12 + i * (width - 24) / 6;
+            const noteY     = y + 10 + row * (height - 20) / rows;
             const noteWidth = width * (0.06 + ((i + trackIndex) % 3) * 0.025);
-            const shimmer = Math.sin(time * 0.007 + i) > 0.75 ? 0.12 : 0;
-            graphics.fillStyle(color, 0.25 + shimmer);
-            graphics.fillRoundedRect(noteX, noteY, noteWidth, noteHeight, 3);
-        }
-    }
-
-    drawAutomation(graphics, x, y, width, height, color, time, trackIndex) {
-        const points = 7;
-        let prevX = x + 10;
-        let prevY = y + height * (0.48 + Math.sin(time * 0.002 + trackIndex) * 0.18);
-
-        graphics.lineStyle(2, color, 0.32);
-        for (let i = 1; i <= points; i++) {
-            const nextX = x + 10 + (i / points) * (width - 20);
-            const nextY = y + height * (0.5 + Math.sin(time * 0.002 + i * 1.2 + trackIndex) * 0.26);
-            graphics.lineBetween(prevX, prevY, nextX, nextY);
-            graphics.fillStyle(color, 0.38);
-            graphics.fillCircle(nextX, nextY, 3);
-            prevX = nextX;
-            prevY = nextY;
+            this.graphics.fillRect(noteX, noteY, noteWidth, noteHeight); // ← fillRect, pas fillRoundedRect
         }
     }
 
     drawPlayhead(leftGutter, top, bottom, sceneWidth, color) {
         const playheadX = leftGutter + Math.max(72, (sceneWidth - leftGutter) * 0.16);
+        this.graphics.lineStyle(3, color, 0.56 + this.pulse * 0.22);
+        this.graphics.lineBetween(playheadX, top, playheadX, bottom);
+        this.graphics.fillStyle(color, 0.16 + this.pulse * 0.1);
+        this.graphics.fillTriangle(playheadX - 9, top, playheadX + 9, top, playheadX, top + 14);
+        // Supprime le fillRect du halo du playhead (peu visible, coûteux)
+    }
 
-        this.playheadGraphics.clear();
-        this.playheadGraphics.lineStyle(3, color, 0.56 + this.pulse * 0.22);
-        this.playheadGraphics.lineBetween(playheadX, top, playheadX, bottom);
-        this.playheadGraphics.fillStyle(color, 0.16 + this.pulse * 0.1);
-        this.playheadGraphics.fillTriangle(playheadX - 9, top, playheadX + 9, top, playheadX, top + 14);
-        this.playheadGraphics.fillStyle(color, 0.05);
-        this.playheadGraphics.fillRect(playheadX, top, sceneWidth - playheadX, bottom - top);
+    destroy() {
+        this.graphics.destroy();
+        if (this.backdropTexture) this.backdropTexture.destroy();
     }
 }
 
@@ -1232,14 +1222,12 @@ class GameScene extends Phaser.Scene {
         while (this.pendingChars.length > 0) {
             const nextChar = this.pendingChars[0];
             const yPos = this.charSpawnYPointer.y;
-            let glowDuration = gameSettings.spawnGlowDuration;
 
             const effectiveStartTime = nextChar.startTime + this.lyricsDelay;
 
             if (time >= Math.max(effectiveStartTime - this.fallTime, (this.lastCharStartTime + gameSettings.lyrics.minGapBetweenChars) - this.fallTime)) {
                 if (this.waveState.advance(time)) {
                     this.charSpawnYPointer.flipDirection();
-                    glowDuration = gameSettings.specialFlipCharGlowDuration;
                 }
 
                 const charObj = this.add.text(startX, this.charSpawnYPointer.y, nextChar.text, {
@@ -1252,7 +1240,7 @@ class GameScene extends Phaser.Scene {
 
                 this.charGroup.add(charObj);
                 this.lastCharStartTime = nextChar.startTime;
-                this.activeChars.push(new ActiveChar(this, nextChar, charObj, startX, yPos, stripLength, this.charSize / 5, glowDuration, this.charSpawnYPointer, effectiveStartTime));
+                this.activeChars.push(new ActiveChar(this, nextChar, charObj, startX, yPos, stripLength, this.charSize / 5, this.charSpawnYPointer, effectiveStartTime));
                 this.pendingChars.shift();
             } else {
                 break;
@@ -1264,7 +1252,9 @@ class GameScene extends Phaser.Scene {
         delta = delta * 1000;
         for (let i = this.dyingStrips.length - 1; i >= 0; i--) {
             const item = this.dyingStrips[i];
-            this.catcher.changeMaxSpeed(gameSettings.catcher.slowedSpeed);
+            if (item.strip.x > 0){
+                this.catcher.changeMaxSpeed(gameSettings.catcher.slowedSpeed);
+            }
 
             item.progress += delta / item.stripDuration;
 
