@@ -1,13 +1,13 @@
 const gameSettings = {
-    // ── TextAlive API ────────────────────────────────────────────────────────
+    // -- TextAlive API --------------------------------------------------------
     api: {
         token: "1O5BTRwWsXT6TfAP",
         songUrl: "https://piapro.jp/t/B3yJ/20251215061727" // go to textAlive website to find the link, it is not directly on piapro
     },
-    // Volume sent to the TextAlive player (0–100)
+    // Volume sent to the TextAlive player (0-100)
     songVolume: 10,
 
-    // ── Global palette ───────────────────────────────────────────────────────
+    // -- Global palette -------------------------------------------------------
     colors: {
         background: "#111111",   // scene background fill
         primary: 0x8A2BE2,       // accent color used for UI elements (purple)
@@ -18,58 +18,59 @@ const gameSettings = {
         pointer: 0x00FFFF        // spawn-Y pointer dot color (cyan)
     },
 
-    // ── Character color system ───────────────────────────────────────────────
+    // -- Character color system -----------------------------------------------
     // Each phrase gets a base color from phraseColors; within a phrase each word
     // is multiplied by a factor from tintCycle to create brightness variety.
 
     // Brightness multipliers applied per-word within a phrase (cycled).
     // Values below 1 darken, above 1 brighten the phrase base color.
     tintCycle: [
-        1.00,  // neutral
-        0.80,  // slightly darker
-        1.20,  // slightly brighter
-        0.90,  // mild dark
-        0.65,  // noticeably darker
+        1.00,  
+        0.80,  
+        1.20,  
+        0.90,  
+        0.65,  
     ],
 
     // Base colors assigned to successive phrases (cycled if there are more phrases than entries)
     phraseColors: [
-        "#FFFFFF",  // white
-        "#7DD3FC",  // sky blue
-        "#A7F3D0",  // mint green
-        "#FDE68A",  // warm yellow
-        "#F9A8D4",  // pink
-        "#C4B5FD",  // lavender
-        "#FDBA74",  // peach
+        "#FFFFFF", 
+        "#7DD3FC", 
+        "#A7F3D0", 
+        "#FDE68A", 
+        "#F9A8D4", 
+        "#C4B5FD", 
+        "#FDBA74", 
     ],
 
-    // ── Fonts ────────────────────────────────────────────────────────────────
+    // -- Fonts ----------------------------------------------------------------
     fonts: {
         main: '"Noto Sans JP", sans-serif',  // lyric characters (supports Japanese glyphs)
         ui: 'sans-serif'                      // combo counter and other HUD text
     },
 
-    // ── Loading screen spinner ───────────────────────────────────────────────
+    // -- Loading screen spinner -----------------------------------------------
     spinner: {
         radius: 50,          // outer radius in px
         thickness: 8,        // ring stroke width in px
         rotationSpeed: 0.1   // radians per frame
     },
 
-    // ── Menu buttons ─────────────────────────────────────────────────────────
+    // -- Menu buttons ---------------------------------------------------------
     button: { width: 250, height: 80, fontSize: "40px" },
 
-    // ── Catcher (the vertical bar the player controls) ───────────────────────
+    // -- Catcher (the vertical bar the player controls) -----------------------
     catcher: {
         xPos: 300,          // fixed X position from the left edge
         width: 40,          // collision / visual width in px
         height: 300,        // collision / visual height in px
         maxSpeed: 1,        // maximum normalized speed (fraction of scene height per second)
+        slowedSpeed: 0.05,  // reduced speed while a strip is draining
         responsiveness: 5.0, // exponential-smoothing factor : higher = snappier tracking
         marginY: 80         // minimum distance the catcher keeps from the top/bottom edges
     },
 
-    // ── Lyric characters ─────────────────────────────────────────────────────
+    // -- Lyric characters -----------------------------------------------------
     lyrics: {
         fallTimeMs: 1700,          // time (ms) for a character to travel from spawn to the catcher
         fallTimeMsMultiplier: 1,   // global speed multiplier applied on top of fallTimeMs (1 = default)
@@ -105,7 +106,7 @@ const gameSettings = {
         ],
     },
 
-    // ── Background large-character flash effect ───────────────────────────────
+    // -- Background large-character flash effect -------------------------------
     // When a character is caught, a giant version of it briefly appears behind the scene.
     backgroundLyrics: {
         fontSize: "500px",          // size of the background character
@@ -116,7 +117,7 @@ const gameSettings = {
         startAlpha: 0.5             // initial opacity of the background character
     },
 
-    // ── Catch particle emitter (legacy / unused config : kept for reference) ─
+    // -- Catch particle emitter (legacy / unused config : kept for reference) -
     // Actual catch particles use the `particles` block below; tint is set per-character at runtime.
     catchParticles: {
         speed: { min: 200, max: 400 },
@@ -126,25 +127,30 @@ const gameSettings = {
         alpha: { min: 0.1, max: 0.6 }
     },
 
-    // ── Combo counter HUD ────────────────────────────────────────────────────
+    // -- Combo counter HUD (top-right) ----------------------------------------
     combo: {
-        xPos: 30,              // X position of the combo text (from the left)
-        yOffset: 20,           // distance from the bottom edge
-        fontSize: "100px",
+        xOffset: 100,          // distance from right edge for value texts
+        mainYOffset: 125,      // Y of combo-points value
+        scoreYOffset: 175,     // Y of total score value
+        fontSize: 100,         // px (numeric so it's easier to do digit-width math)
         color: "#ffffff",
         ghostAlpha: 0.2,       // opacity of the ghost (echo) copy of the counter
         mainScaleBounce: 1.1,  // scale the main counter briefly grows to on increment
         ghostScaleBounce: 1.4, // scale the ghost briefly grows to on increment (more exaggerated)
-        animDuration: 500      // duration (ms) of the bounce-back tween
+        animDuration: 500,     // duration (ms) of the bounce-back tween
+        displayXOffset: 230,   // distance from right edge for label texts
+        displayMainYOffset: 90,   // Y of "Combo" label
+        displayScoreYOffset: 170, // Y of "Score" label
+        displayFontSize: 40
     },
 
-    // ── Spawn-Y pointer ──────────────────────────────────────────────────────
+    // -- Spawn-Y pointer ------------------------------------------------------
     // A moving point that drifts up and down; each new character spawns at its current Y.
     charSpawnYPointer: {
         speed: 1  // fraction of scene height traveled per second at full velocity
     },
 
-    // ── Wave / flip pattern ──────────────────────────────────────────────────
+    // -- Wave / flip pattern --------------------------------------------------
     // The spawn pointer periodically reverses direction to create a wave motion.
     // `patterns` is a list of beat-durations (in beats) the pointer travels in one direction
     // before flipping; the list is cycled indefinitely.
@@ -155,7 +161,7 @@ const gameSettings = {
         patterns: [0.75, 1, 1, 0.5, 0.5, 1, 2, 2]  // beat durations per direction segment
     },
 
-    // ── FL Studio-style timeline background ──────────────────────────────────
+    // -- FL Studio-style timeline background ----------------------------------
     FLBackground: {
         bgColor: 0x434b55,        // main panel background
         topBarColor: 0x2f353c,    // darker strip along the top (ruler area)
@@ -167,7 +173,7 @@ const gameSettings = {
         subdivisions: 4,          // how many minor lines to draw between each major line
     },
 
-    // ── Heart mode ───────────────────────────────────────────────────────────
+    // -- Heart mode -----------------------------------------------------------
     // Spawns floating hearts as a visual flourish (triggered externally).
     heartMode: {
         heartAmount: 6,  // number of hearts spawned per trigger
@@ -178,7 +184,7 @@ const gameSettings = {
     // Master switch : set to false to disable all particle effects globally
     globalParticleToggle: true,
 
-    // ── Catch particle emitter (active config) ────────────────────────────────
+    // -- Catch particle emitter (active config) --------------------------------
     // Tint is not set here; it is overridden per-character in spawnCatchParticles()
     // so each burst matches the caught character's color.
     // Angle 0° = right; the burst fires rightward (away from the catcher wall) like debris.
@@ -193,13 +199,13 @@ const gameSettings = {
         scaleStart: 2.5,
         scaleEnd: 0,
 
-        angleMin: -65,   // cone pointing right: 0° ± 65°
+        angleMin: -65,   // cone pointing right
         angleMax: 65,
 
         gravityY: 600,   // debris arcs downward after impact
     },
 
-    // ── Aura circle ──────────────────────────────────────────────────────────
+    // -- Aura circle ----------------------------------------------------------
     // A soft glowing circle drawn behind characters spawned at wave direction changes.
     backgroundCircle: {
         radiusMultiplier: 0.50, // circle radius = max(charWidth, charHeight) × this
@@ -207,10 +213,10 @@ const gameSettings = {
         fadeDuration: 300,      // ms over which the circle fades out when the character despawns
     },
 
-    // ── Disintegration (caught-character dissolve) ────────────────────────────
+    // -- Disintegration (caught-character dissolve) ----------------------------
     // When a character is caught it freezes at the catcher while its strip drains, then
     // its right edge stays anchored at the catcher while scaleX shrinks to 0. Combined
-    // with an alpha fade this makes the left side vanish first — a squishy wall-absorption.
+    // with an alpha fade this makes the left side vanish first - a squishy wall-absorption.
     disintegration: {
         dissolveDuration: 700,  // ms for the squish-fade after the strip depletes
         dustCount: 2,           // particles emitted per frame during dissolution
@@ -219,6 +225,29 @@ const gameSettings = {
         dustLifespan: 250,
         dustScaleStart: 3,
         dustScaleEnd: 0,
+    },
+
+    // -- Music visualizer -----------------------------------------------------
+    // Segmented bar equalizer driven by TextAlive beat/arousal data.
+    // Shown during long silences; hidden as soon as a lyric appears.
+    visualizer: {
+        numBars: 15,
+        barWidth: 60,
+        barGap: 5,
+        maxHeight: 800,
+        numSegments: 16,
+        segmentGap: 4,
+        reflectionSegments: 4,
+        reflectionAlpha: 0.25,
+        smoothingUp: 0.9,    // bars rise quickly
+        smoothingDown: 0.06, // bars fall slowly
+        minLevel: 0.05,      // bars never fully collapse to zero
+        gradientStops: [
+            { r: 134, g: 206, b: 203 }, // low  (teal)
+            { r: 34,  g: 16,  b: 79  }, // mid  (dark purple)
+            { r: 225, g: 40,  b: 133 }  // high (pink)
+        ],
+        minDelayTrigger: 5000, // ms gap before the visualizer appears (avoids flicker on rapid notes)
     },
 };
 
@@ -229,81 +258,103 @@ class ComboCounter {
     constructor(scene) {
         this.scene = scene;
         this.combo = 0;
+        this.comboPoints = 0;
+        this.totalScore = 0;
+        this.varXOffset = 0; // grows as the digit count increases to keep text right-aligned
 
-        const x = gameSettings.combo.xPos;
-        const y = scene.scale.height - gameSettings.combo.yOffset;
+        const cfg = gameSettings.combo;
+        this.valueX   = scene.scale.width - cfg.xOffset;
+        this.displayX = scene.scale.width - cfg.displayXOffset;
 
-        this.ghostText = scene.add.text(x, y, "0", {
+        const textStyle = (size, thickness) => ({
             fontFamily: gameSettings.fonts.ui,
-            fontSize: gameSettings.combo.fontSize,
-            color: gameSettings.combo.color,
+            fontSize: `${size}px`,
+            color: cfg.color,
             fontStyle: "bold",
             stroke: "#000000",
-            strokeThickness: 4
-        }).setOrigin(0, 1).setAlpha(gameSettings.combo.ghostAlpha).setDepth(100);
+            strokeThickness: thickness,
+        });
 
-        this.mainText = scene.add.text(x, y, "0", {
-            fontFamily: gameSettings.fonts.ui,
-            fontSize: gameSettings.combo.fontSize,
-            color: gameSettings.combo.color,
-            fontStyle: "bold",
-            stroke: "#000000",
-            strokeThickness: 6
-        }).setOrigin(0, 1).setDepth(101);
+        this.ghostText = scene.add.text(this.valueX, cfg.mainYOffset, "0", textStyle(cfg.fontSize, 4))
+            .setOrigin(0, 1).setAlpha(cfg.ghostAlpha).setDepth(100);
+
+        this.mainText = scene.add.text(this.valueX, cfg.mainYOffset, "0", textStyle(cfg.fontSize, 6))
+            .setOrigin(0, 1).setDepth(101);
+
+        this.totalScoreText = scene.add.text(this.valueX, cfg.scoreYOffset, "0", textStyle(cfg.fontSize / 2, 6))
+            .setOrigin(0, 1).setDepth(102);
+
+        this.displayComboText = scene.add.text(this.displayX, cfg.displayMainYOffset, "Combo", textStyle(cfg.displayFontSize, 6))
+            .setOrigin(0, 1).setDepth(102);
+
+        this.displayTotalScoreText = scene.add.text(this.displayX, cfg.displayScoreYOffset, "Score", textStyle(cfg.displayFontSize, 6))
+            .setOrigin(0, 1).setDepth(102);
     }
 
     increment() {
         this.combo++;
+        this.comboPoints = this.calcPointsCurrentCombo(this.combo);
+
+        // Shift x-position left when a new digit is added (keeps texts right-edge aligned)
+        const halfFont = gameSettings.combo.fontSize / 2;
+        if (this.comboPoints === 11 || this.comboPoints === 102 || this.comboPoints === 1002) {
+            this.varXOffset += halfFont;
+            this.ghostText.x           = this.valueX   - this.varXOffset;
+            this.mainText.x            = this.valueX   - this.varXOffset;
+            this.totalScoreText.x      = this.valueX   - this.varXOffset;
+            this.displayComboText.x    = this.displayX - this.varXOffset;
+            this.displayTotalScoreText.x = Math.min(
+                this.displayTotalScoreText.x,
+                this.displayX - this.varXOffset
+            );
+        }
+
         this.updateText();
         this.playAnimation();
     }
 
     reset() {
-        if (this.combo > 0) {
-            this.combo = 0;
-            this.updateText();
-            this.scene.tweens.killTweensOf([this.mainText, this.ghostText]);
-            this.mainText.setScale(1);
-            this.ghostText.setScale(1);
-        }
+        if (this.combo === 0) return;
+        this.totalScore += this.comboPoints;
+        this.combo = 0;
+        this.comboPoints = 0;
+        this.varXOffset = 0;
+
+        this.ghostText.x           = this.valueX;
+        this.mainText.x            = this.valueX;
+        this.totalScoreText.x      = this.valueX;
+        this.displayComboText.x    = this.displayX;
+        this.displayTotalScoreText.x = this.displayX;
+
+        this.updateText();
+        this.scene.tweens.killTweensOf([this.mainText, this.ghostText]);
+        this.mainText.setScale(1);
+        this.ghostText.setScale(1);
     }
 
     updateText() {
-        const text = this.combo.toString();
-        this.mainText.setText(text);
-        this.ghostText.setText(text);
+        this.mainText.setText(this.comboPoints.toString());
+        this.ghostText.setText(this.comboPoints.toString());
+        this.totalScoreText.setText((this.comboPoints + this.totalScore).toString());
     }
 
     playAnimation() {
+        const cfg = gameSettings.combo;
         this.scene.tweens.killTweensOf([this.mainText, this.ghostText]);
 
-        this.scene.tweens.add({
-            targets: this.mainText,
-            scale: gameSettings.combo.mainScaleBounce,
-            duration: 40,
-            ease: 'Quad.easeOut'
-        });
-
-        this.scene.tweens.add({
-            targets: this.ghostText,
-            scale: gameSettings.combo.ghostScaleBounce,
-            duration: 40,
-            ease: 'Quad.easeOut'
-        });
-
-        this.scene.tweens.add({
-            targets: [this.mainText, this.ghostText],
-            scale: 1,
-            duration: gameSettings.combo.animDuration,
-            delay: 40,
-            ease: 'Back.easeOut'
-        });
+        this.scene.tweens.add({ targets: this.mainText,  scale: cfg.mainScaleBounce,  duration: 40, ease: 'Quad.easeOut' });
+        this.scene.tweens.add({ targets: this.ghostText, scale: cfg.ghostScaleBounce, duration: 40, ease: 'Quad.easeOut' });
+        this.scene.tweens.add({ targets: [this.mainText, this.ghostText], scale: 1, duration: cfg.animDuration, delay: 40, ease: 'Back.easeOut' });
     }
 
-    resize(sceneHeight) {
-        const y = sceneHeight - gameSettings.combo.yOffset;
-        this.mainText.y = y;
-        this.ghostText.y = y;
+    resize() {
+        // Layout is top-relative so no y update needed; kept for the resize event listener
+    }
+
+    calcPointsCurrentCombo(combo) {
+        if (combo < 1)  return 0;
+        if (combo < 20) return Math.floor(0.16 * combo ** 2 - 0.33 * combo + 1.16);
+        return 3 * combo;
     }
 }
 
@@ -332,6 +383,7 @@ class Catcher {
         this.scene = scene;
         this.direction = 1;
         this.velocity = 0;
+        this.catcherMaxSpeed = gameSettings.catcher.maxSpeed;
         this.sprite = scene.add.rectangle(
             gameSettings.catcher.xPos - gameSettings.catcher.width,
             y,
@@ -348,8 +400,12 @@ class Catcher {
         this.direction *= -1;
     }
 
+    changeMaxSpeed(speed) {
+        this.catcherMaxSpeed = speed;
+    }
+
     update(delta, sceneHeight) {
-        const targetSpeed = this.direction * sceneHeight * gameSettings.catcher.maxSpeed;
+        const targetSpeed = this.direction * sceneHeight * this.catcherMaxSpeed;
         const t = 1.0 - Math.exp(-gameSettings.catcher.responsiveness * delta);
 
         this.velocity = Phaser.Math.Linear(this.velocity, targetSpeed, t);
@@ -384,14 +440,19 @@ class CharSpawnYPointer {
         this.direction = Math.random() < 0.5 ? 1 : -1;
         this.velocity = 0;
         this.responsiveness = 5.0;
+        this.charSpawnYPointerSpeed = gameSettings.charSpawnYPointer.speed;
     }
 
     flipDirection() {
         this.direction *= -1;
     }
 
+    changeSpeed(speed) {
+        this.charSpawnYPointerSpeed = speed;
+    }
+
     update(delta, sceneHeight) {
-        const targetSpeed = this.direction * sceneHeight * gameSettings.charSpawnYPointer.speed;
+        const targetSpeed = this.direction * sceneHeight * this.charSpawnYPointerSpeed;
         // Exponential smoothing: t approaches 1 as delta grows, making the pointer snap faster
         const t = 1.0 - Math.exp(-this.responsiveness * delta);
 
@@ -562,7 +623,7 @@ class ActiveChar {
         }
     }
 
-    // DISINTEGRATION — called once when the player catches this character
+    // DISINTEGRATION - called once when the player catches this character
     startDisintegration(dyingStrips, fallDistance, fallTime) {
         this.destroyVisuals();
 
@@ -588,7 +649,7 @@ class ActiveChar {
     updateDisintegration(catcherX, delta) {
         const d = gameSettings.disintegration;
 
-        // ── Phase 1: hold the character at the catcher while the strip drains ──
+        // -- Phase 1: hold the character at the catcher while the strip drains --
         if (!this.dissolveStarted) {
             this.obj.x = catcherX + this.obj.width / 2;
             this.dissolveWait += delta;
@@ -598,9 +659,9 @@ class ActiveChar {
             return false;
         }
 
-        // ── Phase 2: squish the character into the wall, left edge first ──
+        // -- Phase 2: squish the character into the wall, left edge first --
         // The right edge stays anchored at (catcherX + charWidth) while scaleX shrinks
-        // to zero. This makes the left boundary recede rightward — the left side disappears
+        // to zero. This makes the left boundary recede rightward - the left side disappears
         // first. Alpha fades simultaneously. A slight scaleY bulge adds the squishy feel.
         this.dissolveElapsed += delta;
         const t = Math.min(this.dissolveElapsed / d.dissolveDuration, 1);
@@ -940,6 +1001,145 @@ class BackgroundChar {
     }
 }
 
+class MusicVisualizer {
+    constructor(scene, x, y) {
+        this.scene = scene;
+        this.x = x;
+        this.y = y;
+        this.levels = new Float32Array(gameSettings.visualizer.numBars).fill(0);
+        this.segmentColors = this._buildGradient();
+        this.graphics = scene.add.graphics().setDepth(-5).setAlpha(0);
+        this.enabled = false;
+
+        // Web Audio state — populated by tryConnect()
+        this._audioCtx    = null;
+        this._analyser    = null;
+        this._fftData     = null;
+        this._connected   = false;
+        this._corsBlocked = false;
+    }
+
+    // Call after taPlayer fires onPlay. Finds the media element TextAlive created
+    // inside mediaContainer (#media div), wires it to an AnalyserNode.
+    tryConnect(mediaContainer) {
+        if (this._connected || this._corsBlocked) return;
+
+        const el = mediaContainer.querySelector('video') ?? mediaContainer.querySelector('audio');
+        if (!el) return;
+
+        try {
+            this._audioCtx = new AudioContext();
+            this._analyser = this._audioCtx.createAnalyser();
+            this._analyser.fftSize = 64;               // 32 bins — enough for 15 bars
+            this._analyser.smoothingTimeConstant = 0.8;
+            this._fftData  = new Uint8Array(this._analyser.frequencyBinCount);
+
+            const source = this._audioCtx.createMediaElementSource(el);
+            source.connect(this._analyser);
+            this._analyser.connect(this._audioCtx.destination);
+            this._audioCtx.resume();
+            this._connected = true;
+            console.log('[Visualizer] Web Audio connected — real FFT active');
+        } catch (e) {
+            console.warn('[Visualizer] Web Audio failed, using TextAlive fallback:', e.message);
+            this._corsBlocked = true;
+            if (this._audioCtx) { this._audioCtx.close(); this._audioCtx = null; }
+        }
+    }
+
+    update(taPlayer) {
+        if (this._connected) {
+            this._readRealFFT();
+        } else {
+            this._readBeatFallback(taPlayer);
+        }
+        this._draw();
+    }
+
+    _readRealFFT() {
+        const cfg = gameSettings.visualizer;
+        this._analyser.getByteFrequencyData(this._fftData);
+
+        const binsPerBar = Math.floor(this._fftData.length / cfg.numBars);
+        for (let b = 0; b < cfg.numBars; b++) {
+            let sum = 0;
+            for (let k = 0; k < binsPerBar; k++) sum += this._fftData[b * binsPerBar + k];
+            const target = Phaser.Math.Clamp(sum / binsPerBar / 255, 0, 1);
+            const alpha  = target > this.levels[b] ? cfg.smoothingUp : cfg.smoothingDown;
+            this.levels[b] += (target - this.levels[b]) * alpha;
+        }
+    }
+
+    _readBeatFallback(taPlayer) {
+        const cfg = gameSettings.visualizer;
+        const pos = taPlayer.timer.position;
+        const va  = taPlayer.getValenceArousal?.(pos) ?? { a: 0, v: 0.5 };
+        const arousal = (va.a + 1) / 2;
+        const beat  = taPlayer.findBeat?.(pos);
+        const pulse = beat ? Math.pow(Math.max(0, 1 - beat.progress(pos)), 8) : 0;
+        const energy = Phaser.Math.Clamp(arousal * 0.6 + pulse * 0.4, 0, 1);
+
+        const center = (cfg.numBars - 1) / 2;
+        for (let b = 0; b < cfg.numBars; b++) {
+            const dist   = Math.abs(b - center) / center;
+            const target = Phaser.Math.Clamp(energy * Math.exp(-dist * dist * 3) + cfg.minLevel, 0, 1);
+            const alpha  = target > this.levels[b] ? cfg.smoothingUp : cfg.smoothingDown;
+            this.levels[b] += (target - this.levels[b]) * alpha;
+        }
+    }
+
+    _draw() {
+        const cfg = gameSettings.visualizer;
+        this.graphics.clear();
+        const segH = Math.max(1, Math.floor((cfg.maxHeight - cfg.segmentGap * cfg.numSegments) / cfg.numSegments));
+        const stepX = cfg.barWidth + cfg.barGap;
+
+        for (let b = 0; b < cfg.numBars; b++) {
+            const activeSegs = Math.round(this.levels[b] * cfg.numSegments);
+            const barX = this.x + b * stepX;
+
+            for (let s = 0; s < activeSegs; s++) {
+                const segY = this.y - (s + 1) * (segH + cfg.segmentGap);
+                this.graphics.fillStyle(this.segmentColors[s], 1);
+                this.graphics.fillRect(barX, segY, cfg.barWidth, segH);
+            }
+
+            const refSegs = Math.min(activeSegs, cfg.reflectionSegments);
+            for (let s = 0; s < refSegs; s++) {
+                const segY = this.y + s * (segH + cfg.segmentGap) + cfg.segmentGap;
+                this.graphics.fillStyle(this.segmentColors[s], cfg.reflectionAlpha * (1 - s / cfg.reflectionSegments));
+                this.graphics.fillRect(barX, segY, cfg.barWidth, segH);
+            }
+        }
+    }
+
+    _buildGradient() {
+        const stops = gameSettings.visualizer.gradientStops;
+        const n = gameSettings.visualizer.numSegments;
+        return Array.from({ length: n }, (_, i) => {
+            const t = (i / (n - 1)) * (stops.length - 1);
+            const idx = Math.min(Math.floor(t), stops.length - 2);
+            const f = t - idx;
+            const a = stops[idx], b = stops[idx + 1];
+            return (Math.round(a.r + (b.r - a.r) * f) << 16)
+                 | (Math.round(a.g + (b.g - a.g) * f) << 8)
+                 |  Math.round(a.b + (b.b - a.b) * f);
+        });
+    }
+
+    enable(duration = 1500) {
+        if (this.enabled) return;
+        this.enabled = true;
+        this.scene.tweens.add({ targets: this.graphics, alpha: 1, duration, ease: 'Quad.easeIn' });
+    }
+
+    disable(duration = 800) {
+        if (!this.enabled) return;
+        this.enabled = false;
+        this.scene.tweens.add({ targets: this.graphics, alpha: 0, duration, ease: 'Quad.easeOut' });
+    }
+}
+
 class LoadScene extends Phaser.Scene {
     constructor() { super("LoadScene"); }
     create() {
@@ -1036,6 +1236,10 @@ class GameScene extends Phaser.Scene {
 
         this.createCatchParticleEmitter();
         this.createDustEmitter();
+
+        const vizCfg = gameSettings.visualizer;
+        const vizX = (this.scale.width - vizCfg.numBars * (vizCfg.barWidth + vizCfg.barGap)) / 2;
+        this.visualizer = new MusicVisualizer(this, vizX, this.scale.height - 20);
     }
 
     // Creates the dust particle emitter used by disintegrating characters.
@@ -1090,6 +1294,17 @@ class GameScene extends Phaser.Scene {
         if (!taPlayer || !taPlayer.isPlaying) return;
         const songTime = taPlayer.timer?.position ?? 0;
         const startX = w + gameSettings.lyrics.startXOffset;
+
+        // Visualizer: show during silence, hide the moment a character is on screen
+        this.visualizer.update(taPlayer);
+        const timeToNextSpawn = this.pendingChars.length > 0
+            ? (this.pendingChars[0].startTime - this.fallTime) - songTime
+            : Infinity;
+        if (this.activeChars.length === 0 && timeToNextSpawn > gameSettings.visualizer.minDelayTrigger) {
+            if (!this.visualizer.enabled) this.visualizer.enable();
+        } else if (this.activeChars.length > 0 || timeToNextSpawn < gameSettings.visualizer.minDelayTrigger / 3) {
+            if (this.visualizer.enabled) this.visualizer.disable();
+        }
 
         this.FLBackground.update(songTime, startX, this.catcher.x, this.fallTime);
         this.catcher.update(deltaSec, h);
@@ -1235,6 +1450,14 @@ class GameScene extends Phaser.Scene {
                     )
                 );
 
+                // Slow the spawn pointer while a long strip is live, then restore
+                if (stripLength >= gameSettings.lyrics.minDelayLongChar) {
+                    this.charSpawnYPointer.changeSpeed(gameSettings.catcher.slowedSpeed);
+                    this.time.delayedCall(stripLength, () => {
+                        this.charSpawnYPointer.changeSpeed(gameSettings.charSpawnYPointer.speed);
+                    });
+                }
+
                 this.pendingChars.shift();
             } else {
                 break;
@@ -1287,6 +1510,13 @@ class GameScene extends Phaser.Scene {
                 this.dyingStrips.splice(i, 1);
             }
         }
+
+        // Slow the catcher while strips are draining; restore when all are gone
+        this.catcher.changeMaxSpeed(
+            this.dyingStrips.length > 0
+                ? gameSettings.catcher.slowedSpeed
+                : gameSettings.catcher.maxSpeed
+        );
     }
 
     updateActiveChars(time, startX, delta) {
@@ -1351,5 +1581,13 @@ const config = {
 const game = new Phaser.Game(config);
 const taPlayer = new Player({ app: { token: gameSettings.api.token }, mediaElement: document.querySelector("#media"), valenceArousalEnabled: true, vocalAmplitudeEnabled: true });
 
-taPlayer.addListener({ onTimerReady() { isTextAliveReady = true; } });
+taPlayer.addListener({
+    onTimerReady() { isTextAliveReady = true; },
+    onPlay() {
+        const scene = game.scene.getScene('GameScene');
+        if (scene?.visualizer) {
+            scene.visualizer.tryConnect(document.querySelector('#media'));
+        }
+    }
+});
 taPlayer.createFromSongUrl(gameSettings.api.songUrl);
