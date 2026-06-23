@@ -259,12 +259,13 @@
 const { Player, PlayerOptions } = TextAliveApp;
 let isTextAliveReady = false;
 let isIntroVideoReady = false;
+let lowPowerMode = false;
 let introVideoElement = null;
 let introVideoFrame = null;
 
 function getSongTitle() {
     const song = taPlayer?.data?.song;
-    return song?.name || song?.songName || song?.title || document.title;
+    return song?.name || song?.songName || song?.title || "Loading Song ...";
 }
 
 function createIntroVideoElement() {
@@ -325,7 +326,7 @@ function resetIntroVideo(video) {
     }
 }
 
-function playIntroVideo(onComplete, onPlaybackBlocked) {
+function playIntroVideo(onComplete, onPlaybackBlocked, onFadeStart) {
     const video = introVideoElement;
     if (!video || !isIntroVideoReady) {
         onPlaybackBlocked();
@@ -333,6 +334,7 @@ function playIntroVideo(onComplete, onPlaybackBlocked) {
     }
 
     let finished = false;
+    let fadeStarted = false;
     const fadeSeconds = gameSettings.introVideo.fadeBeforeEndMs / 1000;
 
     const finish = () => {
@@ -358,6 +360,10 @@ function playIntroVideo(onComplete, onPlaybackBlocked) {
         const duration = video.duration;
         if (Number.isFinite(duration) && duration > 0 && fadeSeconds > 0) {
             const remaining = duration - video.currentTime;
+            if (!fadeStarted && remaining <= fadeSeconds) {
+                fadeStarted = true;
+                onFadeStart?.();
+            }
             const opacity = remaining <= fadeSeconds
                 ? Phaser.Math.Clamp(remaining / fadeSeconds, 0, 1)
                 : 1;
@@ -991,7 +997,8 @@ class BackgroundChar {
             "❤",
             {
                 fontSize: "250px",
-                color: "#ff4040"
+                color: "#ff4040",
+                padding: { top: 40 }
             }
         )
             .setOrigin(0.5)
@@ -1036,7 +1043,8 @@ class BackgroundChar {
                 "❤",
                 {
                     fontSize: `${size}px`,
-                    color: "#ff6b8a"
+                    color: "#ff6b8a",
+                    padding: { top: Math.ceil(size * 0.15) }
                 }
             )
                 .setOrigin(0.5)
@@ -1153,6 +1161,14 @@ class BackgroundChar {
         }
     }
 
+    clear() {
+        this.exitHeartMode();
+        this.text.setAlpha(0);
+        this.text.setText("");
+        this.startTime = 0;
+        this.endTime = 0;
+    }
+
     destroy() {
         this.text.destroy();
     }
@@ -1265,50 +1281,63 @@ class MusicVisualizer {
 
 }
 
-class LoadScene extends Phaser.Scene {
-    constructor() { super("LoadScene"); }
-    create() {
-        const cx = this.scale.width / 2;
-        const cy = this.scale.height / 2;
-        this.spinner = this.add.graphics({ x: cx, y: cy });
-        this.spinner.lineStyle(gameSettings.spinner.thickness, gameSettings.colors.primary, 1);
-        this.spinner.beginPath();
-        this.spinner.arc(0, 0, gameSettings.spinner.radius, 0, Math.PI * 1.5, false);
-        this.spinner.strokePath();
-    }
-    update() {
-        this.spinner.rotation += gameSettings.spinner.rotationSpeed;
-        if (isTextAliveReady && isIntroVideoReady) this.scene.start("TitleScene");
-    }
-}
-
 class TitleScene extends Phaser.Scene {
     constructor() { super("TitleScene"); }
+
     create() {
         const cx = this.scale.width / 2;
         const cy = this.scale.height / 2;
         this.introStarted = false;
-        this.backgroundTime = 0;
-        this.FLBackground = new FLTimelineBackground(this, this.scale.width, this.scale.height);
-        this.FLBackground.setDepth(-10000);
-        this.titleText = this.add.text(cx, cy - 140, getSongTitle(), {
+        this.loaded = false;
+        this.spinnerActive = true;
+
+        // Solid dark background
+        this.add.rectangle(cx, cy, this.scale.width, this.scale.height, 0x111111);
+
+        // Star field (drawn each frame via update)
+        this._buildStars(50);
+
+        // Soft purple glow behind title area
+        const glow = this.add.graphics();
+        glow.fillStyle(0x999999, 0.07);
+        glow.fillCircle(cx, cy - 120, 220);
+
+        // Song title — large, shown during loading (may be empty until TextAlive resolves)
+        this.titleText = this.add.text(cx, cy - 120, getSongTitle(), {
             fontFamily: gameSettings.fonts.main,
-            fontSize: "48px",
+            fontSize: "72px",
             color: gameSettings.colors.textLight,
             fontStyle: "bold",
             stroke: "#000000",
-            strokeThickness: 6,
+            strokeThickness: 8,
             align: "center",
-            wordWrap: { width: Math.min(this.scale.width * 0.85, 1000), useAdvancedWrap: true }
-        }).setOrigin(0.5).setDepth(5);
-        this.playButtonBg = this.add.rectangle(cx, cy, gameSettings.button.width, gameSettings.button.height, gameSettings.colors.primary);
-        this.playButtonBg.setInteractive({ useHandCursor: true });
-        this.playButtonText = this.add.text(cx, cy, "PLAY", {
+            wordWrap: { width: Math.min(this.scale.width * 0.85, 900), useAdvancedWrap: true }
+        }).setOrigin(0.5);
+
+        // Loading spinner
+        this.spinner = this.add.graphics({ x: cx, y: cy + 50 });
+        this.spinner.lineStyle(gameSettings.spinner.thickness, gameSettings.colors.primary, 1);
+        this.spinner.beginPath();
+        this.spinner.arc(0, 0, gameSettings.spinner.radius, 0, Math.PI * 1.5, false);
+        this.spinner.strokePath();
+
+        // Loading label below spinner
+        this.loadingLabel = this.add.text(cx, cy + 120, "Loading...", {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "20px",
+            color: "#777777",
+        }).setOrigin(0.5);
+
+        // Play button — invisible until loading finishes
+        this.playButtonBg = this.add.rectangle(cx, cy + 50, gameSettings.button.width, gameSettings.button.height, gameSettings.colors.primary);
+        this.playButtonBg.setAlpha(0);
+        this.playButtonText = this.add.text(cx, cy + 50, "PLAY", {
             fontFamily: gameSettings.fonts.ui,
             fontSize: gameSettings.button.fontSize,
             color: gameSettings.colors.textLight,
             fontStyle: "bold"
-        }).setOrigin(0.5).setDepth(6);
+        }).setOrigin(0.5).setAlpha(0);
+
         this.playButtonBg.on('pointerover', () => {
             if (!this.introStarted) this.playButtonBg.fillColor = gameSettings.colors.primaryHover;
         });
@@ -1316,37 +1345,121 @@ class TitleScene extends Phaser.Scene {
             if (!this.introStarted) this.playButtonBg.fillColor = gameSettings.colors.primary;
         });
         this.playButtonBg.on('pointerdown', () => this.startIntro());
+
+        // Low Power toggle (bottom-right, touch-friendly)
+        this._buildLowPowerToggle();
     }
 
-    update(time, delta) {
-        this.backgroundTime += Math.min(delta, 100);
-        const startX = this.scale.width + gameSettings.lyrics.startXOffset;
-        const catcherX = gameSettings.catcher.xPos - gameSettings.catcher.width;
-        const fallTime = gameSettings.lyrics.fallTimeMs * gameSettings.lyrics.fallTimeMsMultiplier;
-        this.FLBackground.update(this.backgroundTime, startX, catcherX, fallTime);
+    _buildStars(count) {
+        this.starData = [];
+        for (let i = 0; i < count; i++) {
+            this.starData.push({
+                x: Math.random() * this.scale.width,
+                y: Math.random() * this.scale.height,
+                r: 1 + Math.random() * 2,
+                phase: Math.random() * Math.PI * 2,
+                speed: 0.0008 + Math.random() * 0.0015,
+            });
+        }
+        this.starGraphics = this.add.graphics();
+    }
+
+    _buildLowPowerToggle() {
+        const padX = 14, padY = 14;
+        const btnW = 152, btnH = 38;
+        const descH = 28; // height reserved for the description line above the button
+        const bx = this.scale.width - padX - btnW / 2;
+        const by = this.scale.height - padY - btnH / 2;
+
+        // Description label above the button
+        this.add.text(bx, by - btnH / 2 - descH / 2 - 4, 'Disables all particle effects', {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "12px",
+            color: "#555555",
+        }).setOrigin(0.5);
+
+        this.lpBg = this.add.rectangle(bx, by, btnW, btnH, 0x1e1e1e).setAlpha(0.9);
+        this.lpBg.setStrokeStyle(1, 0x444444);
+        this.lpText = this.add.text(bx, by, 'Low Power', {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "16px",
+            color: "#777777",
+        }).setOrigin(0.5);
+        this.lpBg.setInteractive({ useHandCursor: true });
+        this.lpBg.on('pointerdown', () => this._toggleLowPower());
+    }
+
+    _toggleLowPower() {
+        lowPowerMode = !lowPowerMode;
+        gameSettings.globalParticleToggle = !lowPowerMode;
+        this.lpText.setText(lowPowerMode ? 'Low Power: ON' : 'Low Power');
+        this.lpText.setColor(lowPowerMode ? '#8A2BE2' : '#777777');
+        this.lpBg.fillColor = lowPowerMode ? 0x2a1060 : 0x1e1e1e;
+        if (lowPowerMode) this.starGraphics.clear();
+    }
+
+    update(time) {
+        if (this.spinnerActive) {
+            this.spinner.rotation += gameSettings.spinner.rotationSpeed;
+        }
+        if (!lowPowerMode && this.starGraphics) {
+            this.starGraphics.clear();
+            for (const s of this.starData) {
+                const alpha = 0.15 + 0.75 * (0.5 + 0.5 * Math.sin(s.phase + time * s.speed));
+                this.starGraphics.fillStyle(0xffffff, alpha);
+                this.starGraphics.fillCircle(s.x, s.y, s.r);
+            }
+        }
+        if (!this.loaded && isTextAliveReady && isIntroVideoReady) {
+            this.loaded = true;
+            this._onLoadComplete();
+        }
+    }
+
+    _onLoadComplete() {
+        this.titleText.setText(getSongTitle());
+        this.tweens.add({ targets: [this.spinner, this.loadingLabel], alpha: 0, duration: 500 });
+        this.tweens.add({
+            targets: [this.playButtonBg, this.playButtonText],
+            alpha: 1,
+            duration: 600,
+            delay: 200,
+            onComplete: () => {
+                this.spinnerActive = false;
+                this.playButtonBg.setInteractive({ useHandCursor: true });
+            }
+        });
     }
 
     startIntro() {
         if (this.introStarted) return;
         this.introStarted = true;
+        this.gameStarted = false;
         this.playButtonBg.disableInteractive();
         this.playButtonBg.fillColor = gameSettings.colors.primaryHover;
         this.playButtonBg.setAlpha(0.65);
         this.playButtonText.setAlpha(0.65);
-        playIntroVideo(() => this.startGame(), () => this.resetPlayButton());
+        playIntroVideo(
+            () => this.scene.stop("TitleScene"),   // video ended: clean up this scene
+            () => this.resetPlayButton(),            // playback blocked: reset UI
+            () => {                                  // fade begins: launch game behind video
+                this.gameStarted = true;
+                taPlayer.requestPlay();
+                this.scene.launch("GameScene");
+            }
+        );
     }
 
     resetPlayButton() {
+        if (this.gameStarted) {
+            this.scene.stop("GameScene");
+            this.gameStarted = false;
+        }
         this.introStarted = false;
         this.playButtonBg.setInteractive({ useHandCursor: true });
         this.playButtonBg.fillColor = gameSettings.colors.primary;
         this.playButtonBg.setAlpha(1);
         this.playButtonText.setAlpha(1);
-    }
-
-    startGame() {
-        taPlayer.requestPlay();
-        this.scene.start("GameScene");
     }
 }
 
@@ -1378,19 +1491,14 @@ class GameScene extends Phaser.Scene {
         this.lastBeatIndex = -1;
         this.fallDistance = (this.scale.width + gameSettings.lyrics.startXOffset) - this.catcher.x;
         this.charSize = parseInt(gameSettings.lyrics.fontSize);
+        this.lastSpawnedY = null;
 
         this.backgroundChar = new BackgroundChar(this);
+        this.time.addEvent({ delay: 500, callback: () => this.backgroundChar.clear() });
 
         this.charSpawnYPointer = new CharSpawnYPointer(
             this.scale.height / 2
         );
-
-        this.spawnPointerGraphics = this.add.graphics();
-        this.spawnPointerGraphics.fillStyle(gameSettings.colors.pointer, 1);
-        this.spawnPointerGraphics.fillCircle(0, 0, 10);
-        this.spawnPointerGraphics.setDepth(1);
-        this.spawnPointerGraphics.x = this.scale.width - 50;
-        this.spawnPointerGraphics.y = this.charSpawnYPointer.y;
 
         if (taPlayer && taPlayer.video) {
             this.loadLyrics(taPlayer.video.firstChar);
@@ -1431,7 +1539,6 @@ class GameScene extends Phaser.Scene {
 
         this.FLBackground.update(songTime, startX, this.catcher.x, this.fallTime);
         this.catcher.update(deltaSec, h);
-        this.spawnPointerGraphics.y = this.charSpawnYPointer.y;
         this.charSpawnYPointer.update(deltaSec, h);
         this.spawnPendingChars(songTime, startX, w, h);
         this.updateActiveChars(songTime, startX, deltaSec);
@@ -1442,7 +1549,7 @@ class GameScene extends Phaser.Scene {
         const beat = taPlayer.findBeat?.(songTime);
         if (beat && beat.index !== this.lastBeatIndex) {
             this.lastBeatIndex = beat.index;
-            this.triggerBeatPinch();
+            if (!lowPowerMode) this.triggerBeatPinch();
         }
     }
 
@@ -1522,22 +1629,14 @@ class GameScene extends Phaser.Scene {
 
                 let textToRender = nextChar.text;
 
-                // Prevent punctuation from spawning directly on top of the next character.
                 let spawnX = startX;
                 let spawnY = this.charSpawnYPointer.y;
 
-                // Closing punctuation: same Y as previous character, normal X.
-                if (
-                    gameSettings.lyrics.trailingChars.includes(textToRender) &&
-                    this.activeChars.length > 0
-                ) {
-                    spawnY = this.activeChars[this.activeChars.length - 1].obj.y;
-                }
-
-                // Opening punctuation: shift slightly left so that the
-                // next character visually follows it.
-                else if (gameSettings.lyrics.leadingChars.includes(textToRender)) {
-                    spawnX -= gameSettings.lyrics.fontSize * gameSettings.lyrics.leadingCharShift;
+                if (gameSettings.lyrics.trailingChars.includes(textToRender)) {
+                    // Stay on the same row as the previous character regardless of activeChars state
+                    spawnY = this.lastSpawnedY ?? spawnY;
+                } else if (gameSettings.lyrics.leadingChars.includes(textToRender)) {
+                    spawnX -= this.charSize * gameSettings.lyrics.leadingCharShift;
                 }
 
                 const charObj = this.add.text(
@@ -1552,26 +1651,26 @@ class GameScene extends Phaser.Scene {
                 ).setOrigin(0.5);
 
                 // For normal characters, shift vertically when they would overlap the previous one.
-                // X position is tied to song timing, so we offset Y instead of X.
                 if (
-                    this.activeChars.length > 0 &&
                     !gameSettings.lyrics.trailingChars.includes(textToRender) &&
-                    !gameSettings.lyrics.leadingChars.includes(textToRender)
+                    !gameSettings.lyrics.leadingChars.includes(textToRender) &&
+                    this.activeChars.length > 0
                 ) {
                     const prev = this.activeChars[this.activeChars.length - 1];
                     const prevProgress = (time - (prev.char.startTime - this.fallTime)) / this.fallTime;
                     const prevX = prev.startX - (prev.startX - this.catcher.x) * prevProgress;
                     const gap = (startX - charObj.width * 0.5) - (prevX + prev.obj.width * 0.5);
                     if (gap < gameSettings.lyrics.minCharSpacing) {
-                        spawnY += this.charSpawnYPointer.direction * gameSettings.lyrics.overlapYShift;
                         spawnY = Phaser.Math.Clamp(
-                            spawnY,
+                            spawnY + this.charSpawnYPointer.direction * gameSettings.lyrics.overlapYShift,
                             gameSettings.lyrics.marginY,
                             sceneHeight - gameSettings.lyrics.marginY
                         );
                         charObj.y = spawnY;
                     }
                 }
+
+                this.lastSpawnedY = spawnY;
 
                 const stripLength =
                     nextChar.endTime - nextChar.startTime - this.charSize;
@@ -1691,7 +1790,7 @@ const config = {
     height: window.innerHeight,
     transparent: true,
     physics: { default: "arcade" },
-    scene: [LoadScene, TitleScene, GameScene],
+    scene: [TitleScene, GameScene],
     scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH }
 };
 
