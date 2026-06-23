@@ -22,6 +22,12 @@
     <label>fftSize: <input type="number" id="fftSize" value="2048" min="512" max="16384" step="512" /></label>
     &nbsp;(power of 2; 2048 recommended)<br><br>
 
+    <label>freqMin: <input type="number" id="freqMin" value="5" min="1" max="200" step="1" /></label>
+    &nbsp;Hz &mdash; lower = more leading silence on the bass end<br><br>
+
+    <label>freqMax: <input type="number" id="freqMax" value="20000" min="1000" max="22000" step="500" /></label>
+    &nbsp;Hz<br><br>
+
     <button id="btn">Generate fft-data.json</button>
     &nbsp;<span id="status"></span>
     <p id="error" style="color:red; display:none"></p>
@@ -67,9 +73,12 @@ document.getElementById('btn').addEventListener('click', async () => {
     const intervalMs = parseInt(document.getElementById('intervalMs').value, 10);
     const numBars    = parseInt(document.getElementById('numBars').value, 10);
     const fftSize    = parseInt(document.getElementById('fftSize').value, 10);
+    const freqMin    = parseFloat(document.getElementById('freqMin').value);
+    const freqMax    = parseFloat(document.getElementById('freqMax').value);
 
     if ((fftSize & (fftSize - 1)) !== 0) { showError('fftSize must be a power of 2.'); return; }
     if (intervalMs < 10 || numBars < 1 || fftSize < 512) { showError('Invalid settings.'); return; }
+    if (freqMin <= 0 || freqMax <= freqMin) { showError('freqMin must be > 0 and freqMax must be > freqMin.'); return; }
 
     const btn = document.getElementById('btn');
     btn.disabled = true;
@@ -88,7 +97,7 @@ document.getElementById('btn').addEventListener('click', async () => {
         const stride      = Math.floor(intervalMs / 1000 * sampleRate);
         const totalFrames = Math.floor(audioBuffer.duration * 1000 / intervalMs);
         const hann        = buildHannWindow(fftSize);
-        const ranges      = buildLogBinRanges(numBars, fftSize, sampleRate);
+        const ranges      = buildLogBinRanges(numBars, fftSize, sampleRate, freqMin, freqMax);
         const fftLib      = new FFT(fftSize);
         const out         = fftLib.createComplexArray();
         const windowed    = new Float64Array(fftSize);

@@ -3,10 +3,15 @@
 <head>
     <meta charset="UTF-8" />
     <title>TextAlive Magical Mirai</title>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="src/styles.css">
+    <!-- Force the browser to load EnkaDotMincho24 before the canvas renders text -->
+    <style>
+        #font-preload { position: absolute; visibility: hidden; pointer-events: none;
+                        font-family: 'EnkaDotMincho24'; font-size: 1px; }
+    </style>
 </head>
 <body>
+    <div id="font-preload">あ</div>
     <div id="game-container"></div>
     <div id="media"></div>
 

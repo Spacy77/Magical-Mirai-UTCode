@@ -36,7 +36,7 @@ npx serve .
 Chrome 115+ - Fully supported (recommended)
 Firefox 115+ - Fully supported
 Safari - Not tested !
-Mobile browsers - ⚠️ Not designed for touchscreens
+Mobile browsers - Supported
 
 **Internet connection is required** : the TextAlive API, Phaser, and font assets are loaded from CDN at runtime.
 
