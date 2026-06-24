@@ -8,7 +8,7 @@ const gameSettings = {
         fftDataUrl: "media/fft-data.json",
     },
     // Volume sent to the TextAlive player (0-100)
-    songVolume: 30,
+    songVolume: 70,
 
     // -- Global palette -------------------------------------------------------
     colors: {
@@ -64,13 +64,14 @@ const gameSettings = {
 
     // -- Catcher (the vertical bar the player controls) -----------------------
     catcher: {
-        xPos: 300,          // fixed X position from the left edge
-        width: 40,          // collision / visual width in px
-        height: 300,        // collision / visual height in px
-        maxSpeed: 1,        // maximum normalized speed (fraction of scene height per second)
-        slowedSpeed: 0.05,  // reduced speed while a strip is draining
-        responsiveness: 5.0, // exponential-smoothing factor : higher = snappier tracking
-        marginY: 80         // minimum distance the catcher keeps from the top/bottom edges
+        xPos: 600,          // fixed X position from the left edge
+        width: 250,          // collision / visual width in px
+        height: 250,        // collision / visual height in px
+        maxSpeed: 0.8,        // maximum normalized speed (fraction of scene height per second)
+        slowedSpeed: 0.01,  // reduced speed while a strip is draining
+        responsiveness: 25.0, // exponential-smoothing factor : higher = snappier tracking
+        marginY: 80,         // minimum distance the catcher keeps from the top/bottom edges
+        animTime: 100
     },
 
     // -- Lyric characters -----------------------------------------------------
@@ -79,7 +80,7 @@ const gameSettings = {
         fallTimeMsMultiplier: 1,   // global speed multiplier applied on top of fallTimeMs (1 = default)
         startXOffset: 100,         // how many px past the right edge characters spawn off-screen
         marginY: 100,              // vertical safe zone : characters never spawn closer than this to the top/bottom
-        fontSize: "120px",         // CSS font-size used for all lyric text objects
+        fontSize: "130px",         // CSS font-size used for all lyric text objects
 
         // A character that has moved past the catcher by more than (destroyOverflowRatio × fallDistance)
         // is removed even if it was never caught, preventing off-screen accumulation
@@ -107,6 +108,8 @@ const gameSettings = {
         leadingChars: [
             "「", "『", "（", "［", "【", "〈", "《"
         ],
+
+        lyricsDelay: 200
     },
 
     // -- Background large-character flash effect -------------------------------
@@ -388,16 +391,26 @@ class Catcher {
         this.direction = 1;
         this.velocity = 0;
         this.catcherMaxSpeed = gameSettings.catcher.maxSpeed;
-        this.sprite = scene.add.rectangle(
+        /*this.sprite = scene.add.rectangle(
             gameSettings.catcher.xPos - gameSettings.catcher.width,
             y,
             gameSettings.catcher.width,
             gameSettings.catcher.height,
             gameSettings.colors.primary
+        );*/
+
+        this.sprite = scene.add.image(
+            gameSettings.catcher.xPos - gameSettings.catcher.width,
+            y,
+            "miku_standing"
         );
+        this.sprite.setDisplaySize(gameSettings.catcher.width, gameSettings.catcher.height);
 
         scene.physics.add.existing(this.sprite);
         this.sprite.body.setImmovable(true);
+        this.sprite.body.setSize(gameSettings.catcher.width, gameSettings.catcher.height);
+
+        this.isKnocking = false;
     }
 
     toggleDirection() {
@@ -435,6 +448,29 @@ class Catcher {
 
     get y() {
         return this.sprite.y;
+    }
+
+    playKnockAnim() {
+        /*if (this.isKnocking){
+            this.sprite.setTexture("miku_standing");
+
+            if (this._catchResetTimer) this._catchResetTimer.remove();
+            this._catchResetTimer = this.scene.time.delayedCall(
+                200,
+                () => { this.sprite.setTexture("miku_knocking"); }
+            );
+        }*/
+
+        this.sprite.setTexture("miku_knocking");
+        this.isKnocking = true;
+
+        if (this._catchResetTimer) this._catchResetTimer.remove();
+        this._catchResetTimer = this.scene.time.delayedCall(
+            gameSettings.catcher.animTime,
+            () => { this.sprite.setTexture("miku_standing"); }
+        );
+
+        this.isKnocking = false;
     }
 }
 
@@ -479,7 +515,7 @@ class CharSpawnYPointer {
 }
 
 class ActiveChar {
-    constructor(scene, char, obj, startX, yPos, stripLength, stripHeight, auraOnSpawn) {
+    constructor(scene, char, obj, startX, yPos, stripLength, stripHeight, auraOnSpawn, effectiveStartTime) {
         this.scene = scene;
         this.char = char;
         this.obj = obj;
@@ -494,6 +530,8 @@ class ActiveChar {
 
         this.backgroundCircle = this.createBackgroundCircle();
         this.caught = false;
+
+        this.effectiveStartTime = effectiveStartTime;
     }
 
     // STRIP
@@ -560,8 +598,7 @@ class ActiveChar {
 
     // UPDATE
     update(time, startX, catcherX, fallTime, delta, destroyThreshold, fallDistance, charSize, dyingStrips) {
-        const progress =
-            (time - (this.char.startTime - fallTime)) / fallTime;
+        const progress = (time - (this.effectiveStartTime - fallTime)) / fallTime;
 
         this.obj.x =
             startX - (startX - catcherX) * progress;
@@ -1085,6 +1122,19 @@ class MusicVisualizer {
     }
 }
 
+class BootScene extends Phaser.Scene {
+    constructor() { super("BootScene"); }
+
+    preload() {
+        this.load.image("miku_standing", "media/Miku_standing.png");
+        this.load.image("miku_knocking", "media/Miku_knocking.png");
+    }
+
+    create() {
+        this.scene.start("LoadScene");
+    }
+}
+
 class LoadScene extends Phaser.Scene {
     constructor() { super("LoadScene"); }
     create() {
@@ -1185,6 +1235,8 @@ class GameScene extends Phaser.Scene {
         const vizCfg = gameSettings.visualizer;
         const vizX = (this.scale.width - (vizCfg.numBars * vizCfg.barWidth + (vizCfg.numBars - 1) * vizCfg.barGap)) / 2;
         this.visualizer = new MusicVisualizer(this, vizX, this.scale.height - 20);
+
+        this.lyricsDelay = gameSettings.lyrics.lyricsDelay;
     }
 
     // Creates the dust particle emitter used by disintegrating characters.
@@ -1243,7 +1295,7 @@ class GameScene extends Phaser.Scene {
         // Visualizer: show during silence, hide the moment a character is on screen
         this.visualizer.update(taPlayer);
         const timeToNextSpawn = this.pendingChars.length > 0
-            ? (this.pendingChars[0].startTime - this.fallTime) - songTime
+            ? (this.pendingChars[0].startTime + this.lyricsDelay - this.fallTime) - songTime
             : Infinity;
         if (this.activeChars.length === 0 && timeToNextSpawn > gameSettings.visualizer.minDelayTrigger) {
             if (!this.visualizer.enabled) this.visualizer.enable();
@@ -1302,7 +1354,9 @@ class GameScene extends Phaser.Scene {
             const yPos = this.charSpawnYPointer.y;
             let auraOnSpawn = false;
 
-            if (time >= nextChar.startTime - this.fallTime) {
+            const effectiveStartTime = nextChar.startTime + this.lyricsDelay;
+
+            if (time >= effectiveStartTime - this.fallTime) {
 
                 // If songTime jumped ahead (tab unfocus, TextAlive timer drift, etc.) a character
                 // might be so late that it would already be at or past the catcher the moment it
@@ -1363,7 +1417,7 @@ class GameScene extends Phaser.Scene {
                     !gameSettings.lyrics.leadingChars.includes(textToRender)
                 ) {
                     const prev = this.activeChars[this.activeChars.length - 1];
-                    const prevProgress = (time - (prev.char.startTime - this.fallTime)) / this.fallTime;
+                    const prevProgress = (time - (prev.effectiveStartTime - this.fallTime)) / this.fallTime;
                     const prevX = prev.startX - (prev.startX - this.catcher.x) * prevProgress;
                     const gap = (startX - charObj.width * 0.5) - (prevX + prev.obj.width * 0.5);
                     if (gap < gameSettings.lyrics.minCharSpacing) {
@@ -1391,7 +1445,8 @@ class GameScene extends Phaser.Scene {
                         spawnY,
                         stripLength,
                         this.charSize / 5,
-                        auraOnSpawn
+                        auraOnSpawn,
+                        effectiveStartTime
                     )
                 );
 
@@ -1493,6 +1548,8 @@ class GameScene extends Phaser.Scene {
 
         const charDuration = char.char.endTime - char.char.startTime;
         this.backgroundChar.show(charObj.text, charDuration, taPlayer.timer?.position ?? 0);
+
+        this.catcher.playKnockAnim();
     }
 
     loadLyrics(firstChar) {
@@ -1519,7 +1576,7 @@ const config = {
     height: window.innerHeight,
     transparent: true,
     physics: { default: "arcade" },
-    scene: [LoadScene, TitleScene, GameScene],
+    scene: [BootScene, LoadScene, TitleScene, GameScene],
     scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH }
 };
 
