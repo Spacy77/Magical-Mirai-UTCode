@@ -10,6 +10,13 @@
     // Volume sent to the TextAlive player (0-100)
     songVolume: 70,
 
+    introVideo: {
+        url: "media/miku.webm",
+        fadeBeforeEndMs: 500,
+        objectFit: "cover",
+        objectPosition: "center center",
+    },
+
     // -- Global palette -------------------------------------------------------
     colors: {
         background: "#111111",   // scene background fill
@@ -48,8 +55,9 @@
 
     // -- Fonts ----------------------------------------------------------------
     fonts: {
-        main: '"Noto Sans JP", sans-serif',  // lyric characters (supports Japanese glyphs)
-        ui: 'sans-serif'                      // combo counter and other HUD text
+        main:   '"EnkaDotMincho24", "Yu Gothic", "Hiragino Sans", sans-serif',
+        ui:     '"EnkaDotMincho24", "Yu Gothic", "Hiragino Sans", sans-serif',
+        bgChar: '"Yu Gothic", "Hiragino Sans", "Noto Sans JP", sans-serif',
     },
 
     // -- Loading screen spinner -----------------------------------------------
@@ -82,7 +90,7 @@
         marginY: 100,              // vertical safe zone : characters never spawn closer than this to the top/bottom
         fontSize: "130px",         // CSS font-size used for all lyric text objects
 
-        // A character that has moved past the catcher by more than (destroyOverflowRatio × fallDistance)
+        // A character that has moved past the catcher by more than (destroyOverflowRatio Ã— fallDistance)
         // is removed even if it was never caught, preventing off-screen accumulation
         destroyOverflowRatio: 0.2,
 
@@ -97,16 +105,16 @@
         // Spacing : overlap prevention
         minCharSpacing: 20,      // min horizontal pixel gap before triggering a vertical shift
         overlapYShift: 80,       // vertical pixel offset applied to a character that would overlap the previous one
-        leadingCharShift: 0.35,  // fraction of fontSize to shift leading punctuation left so the next char follows it naturally
+        leadingCharShift: 1.1,  // fraction of fontSize to shift leading punctuation left so the next char follows it naturally
 
         // Japanese closing punctuation : always attached directly to the right edge of the previous character
         trailingChars: [
-            "、", "。", "！", "？", "」", "』", "）", "］", "】", "〉", "》"
+            "ã€", "ã€‚", "ï¼", "ï¼Ÿ", "ã€", "ã€", "ï¼‰", "ï¼½", "ã€‘", "ã€‰", "ã€‹"
         ],
 
         // Japanese opening punctuation : shifted left so the body text starts after them
         leadingChars: [
-            "「", "『", "（", "［", "【", "〈", "《"
+            "ã€Œ", "ã€Ž", "ï¼ˆ", "ï¼»", "ã€", "ã€ˆ", "ã€Š"
         ],
 
         lyricsDelay: 250
@@ -121,16 +129,6 @@
         sizeChangeCoeff: 5,         // how aggressively the size pulses during the animation
         colors: ["#D00000", "#FFB703", "#2A9D8F", "#3A86FF", "#8338EC"],  // palette cycled per catch
         startAlpha: 0.5             // initial opacity of the background character
-    },
-
-    // -- Catch particle emitter (legacy / unused config : kept for reference) -
-    // Actual catch particles use the `particles` block below; tint is set per-character at runtime.
-    catchParticles: {
-        speed: { min: 200, max: 400 },
-        lifespan: { min: 300, max: 600 },
-        quantity: 10,
-        scale: { start: 0.2, end: 2 },
-        alpha: { min: 0.1, max: 0.6 }
     },
 
     // -- Combo counter HUD (top-right) ----------------------------------------
@@ -162,8 +160,6 @@
     // before flipping; the list is cycled indefinitely.
     wave: {
         beatDuration: 500,       // ms per beat (used to convert beat counts to wall-clock time)
-        nextFlipTime: 0,         // runtime state : time of the next scheduled flip (ms)
-        currentTravelBeats: 0,   // runtime state : how many beats the current segment lasts
         patterns: [0.75, 1, 1, 0.5, 0.5, 1, 2, 2]  // beat durations per direction segment
     },
 
@@ -193,7 +189,7 @@
     // -- Catch particle emitter (active config) --------------------------------
     // Tint is not set here; it is overridden per-character in spawnCatchParticles()
     // so each burst matches the caught character's color.
-    // Angle 0° = right; the burst fires rightward (away from the catcher wall) like debris.
+    // Angle 0Â° = right; the burst fires rightward (away from the catcher wall) like debris.
     particles: {
         count: 22,
 
@@ -205,16 +201,14 @@
         scaleStart: 2.5,
         scaleEnd: 0,
 
-        angleMin: -65,   // cone pointing right
-        angleMax: 65,
-
-        gravityY: 600,   // debris arcs downward after impact
+        angleMin: -20,   // cone pointing right
+        angleMax: 20,
     },
 
     // -- Aura circle ----------------------------------------------------------
     // A soft glowing circle drawn behind characters spawned at wave direction changes.
     backgroundCircle: {
-        radiusMultiplier: 0.50, // circle radius = max(charWidth, charHeight) × this
+        radiusMultiplier: 0.50, // circle radius = max(charWidth, charHeight) Ã— this
         alpha: 0.18,            // opacity of the circle (kept low so it doesn't overpower the character)
         fadeDuration: 300,      // ms over which the circle fades out when the character despawns
     },
@@ -225,41 +219,205 @@
     // with an alpha fade this makes the left side vanish first - a squishy wall-absorption.
     disintegration: {
         dissolveDuration: 700,  // ms for the squish-fade after the strip depletes
-        dustCount: 2,           // particles emitted per frame during dissolution
-        dustSpeedMin: 600,
-        dustSpeedMax: 800,
-        dustLifespan: 250,
-        dustScaleStart: 3,
-        dustScaleEnd: 0,
     },
 
     // -- Music visualizer -----------------------------------------------------
-    // Segmented bar equalizer driven by TextAlive beat/arousal data.
-    // Shown during long silences; hidden as soon as a lyric appears.
+    // Permanent background bar EQ driven by pre-computed FFT data.
+    // Mirrored vertically around the screen center; always visible at low opacity.
     visualizer: {
-        numBars: 30,
-        barWidth: 60,
-        barGap: 5,
-        maxHeight: 800,
-        numSegments: 16,
-        segmentGap: 4,
-        reflectionSegments: 4,
-        reflectionAlpha: 0.25,
-        gain: 6,           // multiplier applied to FFT values before display (boost faint bars)
-        smoothingUp: 0.9,    // bars rise quickly
-        smoothingDown: 0.06, // bars fall slowly
-        minLevel: 0.05,      // bars never fully collapse to zero
+        numBars: 45,
+        barWidthRatio: 0.25,   // bar width as a fraction of per-bar cell (rest is gap)
+        numSegments: 14,
+        segmentGap: 3,
+        xOffset: 200,          // px to shift the bar group right of center (positive = right)
+        backgroundAlpha: 0.66,
+        gain: 3.5,
+        smoothingUp: 0.85,
+        smoothingDown: 0.06,
+        // Auto-gain: slowly normalises output so intensity stays consistent across the song
+        agcTargetLevel: 0.55,  // desired smoothed peak as fraction of full scale
+        agcSmoothingUp: 0.01,  // fast attack â€” damps loud spikes quickly
+        agcSmoothingDown: 0.001, // slow release â€” rises gently after a loud section
+        agcMin: 0.4,           // minimum gain multiplier (prevents over-amplifying silence)
+        agcMax: 7.0,           // maximum gain multiplier
+        // Fraction of bars on each side that pinch to zero height (prevents hard-crop look at edges)
+        edgeFadeWidth: 0.06,
         gradientStops: [
             { r: 134, g: 206, b: 203 }, // low  (teal)
             { r: 34,  g: 16,  b: 79  }, // mid  (dark purple)
             { r: 225, g: 40,  b: 133 }  // high (pink)
         ],
-        minDelayTrigger: 5000, // ms gap before the visualizer appears (avoids flicker on rapid notes)
+    },
+
+    // -- Beat pinch effect ----------------------------------------------------
+    // On every TextAlive beat, a barrel/pincushion distortion briefly squeezes
+    // all on-screen lyric characters and the catcher, then springs back.
+    beatPinch: {
+        amount: 0.7,      // barrel FX amount at peak pinch (< 1 = pincushion, > 1 = barrel bulge)
+        duration: 70,     // ms to reach peak pinch (same duration back, yoyo)
+        ease: 'Quad.easeOut',
     },
 };
 
 const { Player, PlayerOptions } = TextAliveApp;
 let isTextAliveReady = false;
+let isIntroVideoReady = false;
+let lowPowerMode = false;
+let introVideoElement = null;
+let introVideoFrame = null;
+
+function getSongTitle() {
+    const song = taPlayer?.data?.song;
+    return song?.name || song?.songName || song?.title || "Loading Song ...";
+}
+
+function createIntroVideoElement() {
+    const cfg = gameSettings.introVideo;
+    if (!cfg.url) {
+        return null;
+    }
+
+    const video = document.createElement("video");
+    video.preload = "auto";
+    video.playsInline = true;
+    video.controls = false;
+    video.style.position = "fixed";
+    video.style.inset = "0";
+    video.style.width = "100vw";
+    video.style.height = "100vh";
+    video.style.objectFit = cfg.objectFit;
+    video.style.objectPosition = cfg.objectPosition;
+    video.style.pointerEvents = "none";
+    video.style.opacity = "0";
+    video.style.display = "none";
+    video.style.zIndex = "10";
+    video.style.background = "transparent";
+
+    const markReady = () => {
+        if (isIntroVideoReady) return;
+        isIntroVideoReady = true;
+        video.removeEventListener("loadeddata", markReady);
+        video.removeEventListener("canplay", markReady);
+    };
+
+    video.addEventListener("loadeddata", markReady);
+    video.addEventListener("canplay", markReady);
+    video.addEventListener("error", () => {
+        window.setTimeout(() => video.load(), 1000);
+    });
+    video.src = cfg.url;
+    document.body.appendChild(video);
+    video.load();
+
+    return video;
+}
+
+function resetIntroVideo(video) {
+    if (introVideoFrame) {
+        cancelAnimationFrame(introVideoFrame);
+        introVideoFrame = null;
+    }
+
+    video.pause();
+    video.style.opacity = "0";
+    video.style.display = "none";
+
+    try {
+        video.currentTime = 0;
+    } catch (err) {
+        void err;
+    }
+}
+
+function playIntroVideo(onComplete, onPlaybackBlocked, onFadeStart) {
+    const video = introVideoElement;
+    if (!video || !isIntroVideoReady) {
+        onPlaybackBlocked();
+        return;
+    }
+
+    let finished = false;
+    let fadeStarted = false;
+    const fadeSeconds = gameSettings.introVideo.fadeBeforeEndMs / 1000;
+
+    const finish = () => {
+        if (finished) return;
+        finished = true;
+        video.removeEventListener("ended", finish);
+        video.removeEventListener("error", abort);
+        resetIntroVideo(video);
+        onComplete();
+    };
+
+    const abort = () => {
+        if (finished) return;
+        finished = true;
+        video.removeEventListener("ended", finish);
+        video.removeEventListener("error", abort);
+        resetIntroVideo(video);
+        video.load();
+        onPlaybackBlocked();
+    };
+
+    const updateOpacity = () => {
+        const duration = video.duration;
+        if (Number.isFinite(duration) && duration > 0 && fadeSeconds > 0) {
+            const remaining = duration - video.currentTime;
+            if (!fadeStarted && remaining <= fadeSeconds) {
+                fadeStarted = true;
+                onFadeStart?.();
+            }
+            const opacity = remaining <= fadeSeconds
+                ? Phaser.Math.Clamp(remaining / fadeSeconds, 0, 1)
+                : 1;
+            video.style.opacity = String(opacity);
+        } else {
+            video.style.opacity = "1";
+        }
+
+        if (!finished) {
+            introVideoFrame = requestAnimationFrame(updateOpacity);
+        }
+    };
+
+    video.removeEventListener("ended", finish);
+    video.removeEventListener("error", abort);
+    resetIntroVideo(video);
+    video.style.display = "block";
+    video.style.opacity = "1";
+    video.addEventListener("ended", finish);
+    video.addEventListener("error", abort);
+
+    const playPromise = video.play();
+    introVideoFrame = requestAnimationFrame(updateOpacity);
+
+    if (playPromise?.catch) {
+        playPromise.catch(abort);
+    }
+}
+
+// Color utilities
+function hexToRgb(hex) {
+    hex = hex.replace("#", "");
+    return {
+        r: parseInt(hex.substring(0, 2), 16),
+        g: parseInt(hex.substring(2, 4), 16),
+        b: parseInt(hex.substring(4, 6), 16),
+    };
+}
+
+function rgbToHex(r, g, b) {
+    return "#" + [r, g, b]
+        .map(v => Math.max(0, Math.min(255, Math.round(v))))
+        .map(v => v.toString(16).padStart(2, "0"))
+        .join("");
+}
+
+// Multiplies each channel by factor: <1 darkens, >1 brightens
+function tintColor(hex, factor) {
+    const { r, g, b } = hexToRgb(hex);
+    return rgbToHex(r * factor, g * factor, b * factor);
+}
 
 class ComboCounter {
     constructor(scene) {
@@ -300,20 +458,17 @@ class ComboCounter {
 
     increment() {
         this.combo++;
+        const prevLen = this.comboPoints.toString().length;
         this.comboPoints = this.calcPointsCurrentCombo(this.combo);
 
-        // Shift x-position left when a new digit is added (keeps texts right-edge aligned)
-        const halfFont = gameSettings.combo.fontSize / 2;
-        if (this.comboPoints === 11 || this.comboPoints === 102 || this.comboPoints === 1002) {
-            this.varXOffset += halfFont;
-            this.ghostText.x           = this.valueX   - this.varXOffset;
-            this.mainText.x            = this.valueX   - this.varXOffset;
-            this.totalScoreText.x      = this.valueX   - this.varXOffset;
-            this.displayComboText.x    = this.displayX - this.varXOffset;
-            this.displayTotalScoreText.x = Math.min(
-                this.displayTotalScoreText.x,
-                this.displayX - this.varXOffset
-            );
+        // Each new digit widens the displayed number; shift all anchors left to keep right-edge aligned
+        if (this.comboPoints.toString().length > prevLen) {
+            this.varXOffset += gameSettings.combo.fontSize / 2;
+            this.ghostText.x             = this.valueX   - this.varXOffset;
+            this.mainText.x              = this.valueX   - this.varXOffset;
+            this.totalScoreText.x        = this.valueX   - this.varXOffset;
+            this.displayComboText.x      = this.displayX - this.varXOffset;
+            this.displayTotalScoreText.x = Math.min(this.displayTotalScoreText.x, this.displayX - this.varXOffset);
         }
 
         this.updateText();
@@ -354,10 +509,6 @@ class ComboCounter {
         this.scene.tweens.add({ targets: [this.mainText, this.ghostText], scale: 1, duration: cfg.animDuration, delay: 40, ease: 'Back.easeOut' });
     }
 
-    resize() {
-        // Layout is top-relative so no y update needed; kept for the resize event listener
-    }
-
     calcPointsCurrentCombo(combo) {
         if (combo < 1)  return 0;
         if (combo < 20) return Math.floor(0.16 * combo ** 2 - 0.33 * combo + 1.16);
@@ -368,19 +519,16 @@ class ComboCounter {
 class WaveState {
     constructor() {
         this.beatDuration = gameSettings.wave.beatDuration;
-        this.nextFlipTime = gameSettings.wave.nextFlipTime;
-        this.currentTravelBeats = gameSettings.wave.currentTravelBeats;
+        this.nextFlipTime = 0;
+        this.currentTravelBeats = 0;
         this.patterns = gameSettings.wave.patterns;
     }
 
+    // Returns true when a flip fires — the caller uses this to trigger the spawn-aura effect.
     advance(songTime) {
-        if (songTime < this.nextFlipTime) {
-            return false;
-        }
-
-        const nextTravelBeats = Phaser.Utils.Array.GetRandom(this.patterns);
-        this.currentTravelBeats = nextTravelBeats;
-        this.nextFlipTime = songTime + nextTravelBeats * this.beatDuration;
+        if (songTime < this.nextFlipTime) return false;
+        this.currentTravelBeats = Phaser.Utils.Array.GetRandom(this.patterns);
+        this.nextFlipTime = songTime + this.currentTravelBeats * this.beatDuration;
         return true;
     }
 }
@@ -391,14 +539,6 @@ class Catcher {
         this.direction = 1;
         this.velocity = 0;
         this.catcherMaxSpeed = gameSettings.catcher.maxSpeed;
-        /*this.sprite = scene.add.rectangle(
-            gameSettings.catcher.xPos - gameSettings.catcher.width,
-            y,
-            gameSettings.catcher.width,
-            gameSettings.catcher.height,
-            gameSettings.colors.primary
-        );*/
-
         this.sprite = scene.add.image(
             gameSettings.catcher.xPos - gameSettings.catcher.width,
             y,
@@ -451,16 +591,6 @@ class Catcher {
     }
 
     playKnockAnim() {
-        /*if (this.isKnocking){
-            this.sprite.setTexture("miku_standing");
-
-            if (this._catchResetTimer) this._catchResetTimer.remove();
-            this._catchResetTimer = this.scene.time.delayedCall(
-                200,
-                () => { this.sprite.setTexture("miku_knocking"); }
-            );
-        }*/
-
         this.sprite.setTexture("miku_knocking");
         this.isKnocking = true;
 
@@ -534,13 +664,10 @@ class ActiveChar {
         this.effectiveStartTime = effectiveStartTime;
     }
 
-    // STRIP
     createStrip(stripLength, stripHeight) {
         if (stripLength < gameSettings.lyrics.minDelayLongChar) {
             return null;
         }
-
-        // Use the character's own color so the strip visually belongs to it
 
         const strip = this.scene.add.rectangle(
             this.startX + this.obj.width / 2,
@@ -564,7 +691,6 @@ class ActiveChar {
         }
     }
 
-    // AURA CIRCLE
     createBackgroundCircle() {
         if (!this.auraOnSpawn) {
             return null;
@@ -587,26 +713,21 @@ class ActiveChar {
         return circle;
     }
 
-    updateBackgroundCircle(delta) {
-        if (!this.backgroundCircle) {
-            return;
-        }
-
-        this.backgroundCircle.x = this.obj.x;
-        this.backgroundCircle.y = this.obj.y;
-    }
-
-    // UPDATE
-    update(time, startX, catcherX, fallTime, delta, destroyThreshold, fallDistance, charSize, dyingStrips) {
+    update(time, catcherX, fallTime, delta, destroyThreshold, fallDistance, charSize, dyingStrips) {
         const progress = (time - (this.effectiveStartTime - fallTime)) / fallTime;
 
-        this.obj.x =
-            startX - (startX - catcherX) * progress;
-
+        this.obj.x = this.startX - (this.startX - catcherX) * progress;
         this.obj.y = this.yPos;
 
-        this.updateBackgroundCircle(delta);
-        this.updateStripPosition(startX, catcherX, progress, charSize);
+        // Keep the physics body in sync with the manually-driven position so
+        // Arcade overlap detection always checks the current visual location.
+        this.obj.body?.reset(this.obj.x, this.obj.y);
+
+        if (this.backgroundCircle) {
+            this.backgroundCircle.x = this.obj.x;
+            this.backgroundCircle.y = this.obj.y;
+        }
+        this.updateStripPosition(this.startX, catcherX, progress, charSize);
 
         if (progress > 1 + destroyThreshold) {
             this.retire(dyingStrips, fallDistance, fallTime);
@@ -621,11 +742,42 @@ class ActiveChar {
         this.caught = true;
         if (!gameSettings.globalParticleToggle) return;
 
-        const emitter = this.scene.catchEmitter;
-        if (!emitter) return;
+        const pc = gameSettings.particles;
+        const scene = this.scene;
+        const originX = scene.catcher.x + gameSettings.catcher.width / 2;
+        const originY = this.obj.y;
+        const color = this.color;
 
-        emitter.setParticleTint(this.color);
-        emitter.explode(gameSettings.particles.count, this.obj.x, this.obj.y);
+        const dots = [];
+        for (let i = 0; i < pc.count; i++) {
+            const angleRad = (Phaser.Math.FloatBetween(pc.angleMin, pc.angleMax) * Math.PI) / 180;
+            const speed = Phaser.Math.FloatBetween(pc.speedMin, pc.speedMax);
+            dots.push({ vx: Math.cos(angleRad) * speed, vy: Math.sin(angleRad) * speed });
+        }
+
+        const gfx = scene.add.graphics();
+        let elapsed = 0;
+
+        const timer = scene.time.addEvent({
+            delay: 16,
+            loop: true,
+            callback: () => {
+                elapsed += 16;
+                if (elapsed >= pc.lifespan) {
+                    timer.remove(false);
+                    gfx.destroy();
+                    return;
+                }
+                const progress = elapsed / pc.lifespan;
+                const t = elapsed / 1000;
+                const radius = (pc.scaleStart + (pc.scaleEnd - pc.scaleStart) * progress) * 4;
+                gfx.clear();
+                gfx.fillStyle(color, 1 - progress);
+                for (const d of dots) {
+                    gfx.fillCircle(originX + d.vx * t, originY + d.vy * t, radius);
+                }
+            },
+        });
     }
 
     // RETIRE (MISS / OFFSCREEN)
@@ -649,11 +801,10 @@ class ActiveChar {
         });
     }
 
-    // CLEANUP
     destroyVisuals() {
         if (this.backgroundCircle) {
             const circle = this.backgroundCircle;
-            // Null immediately so updateBackgroundCircle stops tracking it during the fade
+            // Null before the tween so in-flight update() calls skip repositioning the fading circle
             this.backgroundCircle = null;
             this.scene.tweens.add({
                 targets: circle,
@@ -716,16 +867,6 @@ class ActiveChar {
         this.obj.alpha = 1 - eased;
         this.obj.scaleY = 1 + 0.25 * Math.sin(Math.PI * t); // bulge peaks at t=0.5
 
-        if (gameSettings.globalParticleToggle) {
-            const halfH = this.obj.height / 2;
-            const emitter = this.scene.dustEmitter;
-            emitter.setParticleTint(this.color);
-            for (let i = 0; i < d.dustCount; i++) {
-                const randomY = this.obj.y + (Math.random() * 2 - 1) * halfH;
-                emitter.explode(1, catcherX, randomY);
-            }
-        }
-
         if (t >= 1) {
             this.obj.destroy();
             return true;
@@ -760,7 +901,7 @@ class FLTimelineBackground extends Phaser.GameObjects.Container {
     _getOrCreateLabel(index) {
         if (index >= this._labelPool.length) {
             const lbl = this.scene.add.text(0, 8, '', {
-                fontFamily: "Arial",
+                fontFamily: gameSettings.fonts.ui,
                 fontSize: "16px",
                 color: gameSettings.FLBackground.textColor
             });
@@ -858,7 +999,7 @@ class BackgroundChar {
             scene.scale.height / 2,
             "",
             {
-                fontFamily: gameSettings.fonts.main,
+                fontFamily: gameSettings.fonts.bgChar,
                 fontSize: gameSettings.backgroundLyrics.fontSize,
                 color: gameSettings.backgroundLyrics.colors[0]
             }
@@ -875,7 +1016,8 @@ class BackgroundChar {
             "❤",
             {
                 fontSize: "250px",
-                color: "#ff4040"
+                color: "#ff4040",
+                padding: { top: 40 }
             }
         )
             .setOrigin(0.5)
@@ -920,7 +1062,8 @@ class BackgroundChar {
                 "❤",
                 {
                     fontSize: `${size}px`,
-                    color: "#ff6b8a"
+                    color: "#ff6b8a",
+                    padding: { top: Math.ceil(size * 0.15) }
                 }
             )
                 .setOrigin(0.5)
@@ -1037,20 +1180,28 @@ class BackgroundChar {
         }
     }
 
+    clear() {
+        this.exitHeartMode();
+        this.text.setAlpha(0);
+        this.text.setText("");
+        this.startTime = 0;
+        this.endTime = 0;
+    }
+
     destroy() {
         this.text.destroy();
     }
 }
 
 class MusicVisualizer {
-    constructor(scene, x, y) {
+    constructor(scene, y) {
         this.scene = scene;
-        this.x = x;
         this.y = y;
         this.levels = new Float32Array(gameSettings.visualizer.numBars).fill(0);
         this.segmentColors = this._buildGradient();
-        this.graphics = scene.add.graphics().setDepth(-5).setAlpha(0);
-        this.enabled = false;
+        this.graphics = scene.add.graphics().setDepth(-5).setAlpha(gameSettings.visualizer.backgroundAlpha);
+        // Start AGC peak at target so the first notes aren't blasted or silent
+        this._agcPeak = gameSettings.visualizer.agcTargetLevel;
     }
 
     update(taPlayer) {
@@ -1063,8 +1214,24 @@ class MusicVisualizer {
         const cfg = gameSettings.visualizer;
         const frameIndex = Math.min(Math.floor(positionMs / d.intervalMs), d.frames.length - 1);
         const frame = d.frames[frameIndex];
+
+        // AGC: track the peak raw signal with a slow envelope follower
+        let peakRaw = 0;
         for (let b = 0; b < cfg.numBars; b++) {
-            const target = Math.min(1, (frame[b] ?? 0) / 255 * cfg.gain);
+            const raw = (frame[b] ?? 0) / 255;
+            if (raw > peakRaw) peakRaw = raw;
+        }
+        const peakAlpha = peakRaw > this._agcPeak ? cfg.agcSmoothingUp : cfg.agcSmoothingDown;
+        this._agcPeak += (peakRaw - this._agcPeak) * peakAlpha;
+
+        const autoGain = Phaser.Math.Clamp(
+            cfg.agcTargetLevel / Math.max(this._agcPeak, 0.01),
+            cfg.agcMin, cfg.agcMax
+        );
+
+        for (let b = 0; b < cfg.numBars; b++) {
+            const raw = (frame[b] ?? 0) / 255;
+            const target = Math.min(1, raw * cfg.gain * autoGain);
             const alpha  = target > this.levels[b] ? cfg.smoothingUp : cfg.smoothingDown;
             this.levels[b] += (target - this.levels[b]) * alpha;
         }
@@ -1073,24 +1240,46 @@ class MusicVisualizer {
     _draw() {
         const cfg = gameSettings.visualizer;
         this.graphics.clear();
-        const segH = Math.max(1, Math.floor((cfg.maxHeight - cfg.segmentGap * cfg.numSegments) / cfg.numSegments));
-        const stepX = cfg.barWidth + cfg.barGap;
+
+        const sceneW = this.scene.scale.width;
+        const sceneH = this.scene.scale.height;
+
+        // Bars fill 90% of screen width, centered
+        const totalW = sceneW * 0.90;
+        const stepX  = totalW / cfg.numBars;
+        const barW   = Math.max(2, stepX * cfg.barWidthRatio);
+        const startX = (sceneW - totalW) / 2 + cfg.xOffset;
+
+        // Each half uses at most 44% of screen height so bars never clip off-screen
+        const maxHalfH = sceneH * 0.44;
+        const segH = Math.max(2, Math.floor((maxHalfH - cfg.segmentGap * cfg.numSegments) / cfg.numSegments));
 
         for (let b = 0; b < cfg.numBars; b++) {
-            const activeSegs = Math.round(this.levels[b] * cfg.numSegments);
-            const barX = this.x + b * stepX;
+            const barX = startX + b * stepX;
 
+            // Smoothstep pinch: edge bars are shorter, not dimmer — avoids the cropped look
+            // when high-energy frequencies land on the sides.
+            // edgeT must be clamped to [0,1] before the smoothstep — outside that range
+            // t*(t*(3-2*t)) goes negative, making activeSegs negative and all bars invisible.
+            const normX      = b / (cfg.numBars - 1);
+            const edgeT      = Math.min(1, Math.min(normX, 1 - normX) / cfg.edgeFadeWidth);
+            const heightMult = edgeT * edgeT * (3 - 2 * edgeT); // smoothstep, safe on [0,1]
+            const activeSegs = Math.round(this.levels[b] * cfg.numSegments * heightMult);
+
+            // Bars growing upward from center
             for (let s = 0; s < activeSegs; s++) {
                 const segY = this.y - (s + 1) * (segH + cfg.segmentGap);
                 this.graphics.fillStyle(this.segmentColors[s], 1);
-                this.graphics.fillRect(barX, segY, cfg.barWidth, segH);
+                this.graphics.fillRect(barX, segY, barW, segH);
             }
 
-            const refSegs = Math.min(activeSegs, cfg.reflectionSegments);
-            for (let s = 0; s < refSegs; s++) {
-                const segY = this.y + s * (segH + cfg.segmentGap) + cfg.segmentGap;
-                this.graphics.fillStyle(this.segmentColors[s], cfg.reflectionAlpha * (1 - s / cfg.reflectionSegments));
-                this.graphics.fillRect(barX, segY, cfg.barWidth, segH);
+            // Mirror grows downward with one fewer bar so the axis sits at the midpoint
+            // of the first upward segment rather than doubling it.
+            const mirrorSegs = Math.max(0, activeSegs - 1);
+            for (let s = 0; s < mirrorSegs; s++) {
+                const segY = this.y + s * (segH + cfg.segmentGap);
+                this.graphics.fillStyle(this.segmentColors[s], 1);
+                this.graphics.fillRect(barX, segY, barW, segH);
             }
         }
     }
@@ -1109,17 +1298,6 @@ class MusicVisualizer {
         });
     }
 
-    enable(duration = 1500) {
-        if (this.enabled) return;
-        this.enabled = true;
-        this.scene.tweens.add({ targets: this.graphics, alpha: 1, duration, ease: 'Quad.easeIn' });
-    }
-
-    disable(duration = 800) {
-        if (!this.enabled) return;
-        this.enabled = false;
-        this.scene.tweens.add({ targets: this.graphics, alpha: 0, duration, ease: 'Quad.easeOut' });
-    }
 }
 
 class BootScene extends Phaser.Scene {
@@ -1131,43 +1309,189 @@ class BootScene extends Phaser.Scene {
     }
 
     create() {
-        this.scene.start("LoadScene");
-    }
-}
-
-class LoadScene extends Phaser.Scene {
-    constructor() { super("LoadScene"); }
-    create() {
-        const cx = this.scale.width / 2;
-        const cy = this.scale.height / 2;
-        this.spinner = this.add.graphics({ x: cx, y: cy });
-        this.spinner.lineStyle(gameSettings.spinner.thickness, gameSettings.colors.primary, 1);
-        this.spinner.beginPath();
-        this.spinner.arc(0, 0, gameSettings.spinner.radius, 0, Math.PI * 1.5, false);
-        this.spinner.strokePath();
-    }
-    update() {
-        this.spinner.rotation += gameSettings.spinner.rotationSpeed;
-        if (isTextAliveReady) this.scene.start("TitleScene");
+        this.scene.start("TitleScene");
     }
 }
 
 class TitleScene extends Phaser.Scene {
     constructor() { super("TitleScene"); }
+
     create() {
         const cx = this.scale.width / 2;
         const cy = this.scale.height / 2;
-        const playButtonBg = this.add.rectangle(cx, cy, gameSettings.button.width, gameSettings.button.height, gameSettings.colors.primary);
-        playButtonBg.setInteractive({ useHandCursor: true });
-        this.add.text(cx, cy, "PLAY", {
+        this.introStarted = false;
+        this.loaded = false;
+        this.spinnerActive = true;
+
+        // Solid dark background
+        this.add.rectangle(cx, cy, this.scale.width, this.scale.height, 0x111111);
+
+        // Star field (drawn each frame via update)
+        this._buildStars(50);
+
+        // Soft purple glow behind title area
+        const glow = this.add.graphics();
+        glow.fillStyle(0x999999, 0.07);
+        glow.fillCircle(cx, cy - 120, 220);
+
+        // Song title — large, shown during loading (may be empty until TextAlive resolves)
+        this.titleText = this.add.text(cx, cy - 120, getSongTitle(), {
+            fontFamily: gameSettings.fonts.main,
+            fontSize: "72px",
+            color: gameSettings.colors.textLight,
+            fontStyle: "bold",
+            stroke: "#000000",
+            strokeThickness: 8,
+            align: "center",
+            wordWrap: { width: Math.min(this.scale.width * 0.85, 900), useAdvancedWrap: true }
+        }).setOrigin(0.5);
+
+        // Loading spinner
+        this.spinner = this.add.graphics({ x: cx, y: cy + 50 });
+        this.spinner.lineStyle(gameSettings.spinner.thickness, gameSettings.colors.primary, 1);
+        this.spinner.beginPath();
+        this.spinner.arc(0, 0, gameSettings.spinner.radius, 0, Math.PI * 1.5, false);
+        this.spinner.strokePath();
+
+        // Loading label below spinner
+        this.loadingLabel = this.add.text(cx, cy + 120, "Loading...", {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "20px",
+            color: "#777777",
+        }).setOrigin(0.5);
+
+        // Play button — invisible until loading finishes
+        this.playButtonBg = this.add.rectangle(cx, cy + 50, gameSettings.button.width, gameSettings.button.height, gameSettings.colors.primary);
+        this.playButtonBg.setAlpha(0);
+        this.playButtonText = this.add.text(cx, cy + 50, "PLAY", {
             fontFamily: gameSettings.fonts.ui,
             fontSize: gameSettings.button.fontSize,
             color: gameSettings.colors.textLight,
             fontStyle: "bold"
+        }).setOrigin(0.5).setAlpha(0);
+
+        this.playButtonBg.on('pointerover', () => {
+            if (!this.introStarted) this.playButtonBg.fillColor = gameSettings.colors.primaryHover;
+        });
+        this.playButtonBg.on('pointerout', () => {
+            if (!this.introStarted) this.playButtonBg.fillColor = gameSettings.colors.primary;
+        });
+        this.playButtonBg.on('pointerdown', () => this.startIntro());
+
+        // Low Power toggle (bottom-right, touch-friendly)
+        this._buildLowPowerToggle();
+    }
+
+    _buildStars(count) {
+        this.starData = [];
+        for (let i = 0; i < count; i++) {
+            this.starData.push({
+                x: Math.random() * this.scale.width,
+                y: Math.random() * this.scale.height,
+                r: 1 + Math.random() * 2,
+                phase: Math.random() * Math.PI * 2,
+                speed: 0.0008 + Math.random() * 0.0015,
+            });
+        }
+        this.starGraphics = this.add.graphics();
+    }
+
+    _buildLowPowerToggle() {
+        const padX = 14, padY = 14;
+        const btnW = 152, btnH = 38;
+        const descH = 28; // height reserved for the description line above the button
+        const bx = this.scale.width - padX - btnW / 2;
+        const by = this.scale.height - padY - btnH / 2;
+
+        // Description label above the button
+        this.add.text(bx, by - btnH / 2 - descH / 2 - 4, 'Disables all particle effects', {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "12px",
+            color: "#555555",
         }).setOrigin(0.5);
-        playButtonBg.on('pointerover', () => { playButtonBg.fillColor = gameSettings.colors.primaryHover; });
-        playButtonBg.on('pointerout', () => { playButtonBg.fillColor = gameSettings.colors.primary; });
-        playButtonBg.on('pointerdown', () => { taPlayer.requestPlay(); this.scene.start("GameScene"); });
+
+        this.lpBg = this.add.rectangle(bx, by, btnW, btnH, 0x1e1e1e).setAlpha(0.9);
+        this.lpBg.setStrokeStyle(1, 0x444444);
+        this.lpText = this.add.text(bx, by, 'Low Power', {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "16px",
+            color: "#777777",
+        }).setOrigin(0.5);
+        this.lpBg.setInteractive({ useHandCursor: true });
+        this.lpBg.on('pointerdown', () => this._toggleLowPower());
+    }
+
+    _toggleLowPower() {
+        lowPowerMode = !lowPowerMode;
+        gameSettings.globalParticleToggle = !lowPowerMode;
+        this.lpText.setText(lowPowerMode ? 'Low Power: ON' : 'Low Power');
+        this.lpText.setColor(lowPowerMode ? '#8A2BE2' : '#777777');
+        this.lpBg.fillColor = lowPowerMode ? 0x2a1060 : 0x1e1e1e;
+        if (lowPowerMode) this.starGraphics.clear();
+    }
+
+    update(time) {
+        if (this.spinnerActive) {
+            this.spinner.rotation += gameSettings.spinner.rotationSpeed;
+        }
+        if (!lowPowerMode && this.starGraphics) {
+            this.starGraphics.clear();
+            for (const s of this.starData) {
+                const alpha = 0.15 + 0.75 * (0.5 + 0.5 * Math.sin(s.phase + time * s.speed));
+                this.starGraphics.fillStyle(0xffffff, alpha);
+                this.starGraphics.fillCircle(s.x, s.y, s.r);
+            }
+        }
+        if (!this.loaded && isTextAliveReady && isIntroVideoReady) {
+            this.loaded = true;
+            this._onLoadComplete();
+        }
+    }
+
+    _onLoadComplete() {
+        this.titleText.setText(getSongTitle());
+        this.tweens.add({ targets: [this.spinner, this.loadingLabel], alpha: 0, duration: 500 });
+        this.tweens.add({
+            targets: [this.playButtonBg, this.playButtonText],
+            alpha: 1,
+            duration: 600,
+            delay: 200,
+            onComplete: () => {
+                this.spinnerActive = false;
+                this.playButtonBg.setInteractive({ useHandCursor: true });
+            }
+        });
+    }
+
+    startIntro() {
+        if (this.introStarted) return;
+        this.introStarted = true;
+        this.gameStarted = false;
+        this.playButtonBg.disableInteractive();
+        this.playButtonBg.fillColor = gameSettings.colors.primaryHover;
+        this.playButtonBg.setAlpha(0.65);
+        this.playButtonText.setAlpha(0.65);
+        playIntroVideo(
+            () => this.scene.stop("TitleScene"),   // video ended: clean up this scene
+            () => this.resetPlayButton(),            // playback blocked: reset UI
+            () => {                                  // fade begins: launch game behind video
+                this.gameStarted = true;
+                taPlayer.requestPlay();
+                this.scene.launch("GameScene");
+            }
+        );
+    }
+
+    resetPlayButton() {
+        if (this.gameStarted) {
+            this.scene.stop("GameScene");
+            this.gameStarted = false;
+        }
+        this.introStarted = false;
+        this.playButtonBg.setInteractive({ useHandCursor: true });
+        this.playButtonBg.fillColor = gameSettings.colors.primary;
+        this.playButtonBg.setAlpha(1);
+        this.playButtonText.setAlpha(1);
     }
 }
 
@@ -1186,28 +1510,27 @@ class GameScene extends Phaser.Scene {
         this.charGroup = this.physics.add.group();
         this.physics.add.overlap(this.catcher.sprite, this.charGroup, this.catchChar, null, this);
 
-        this.cursors = this.input.keyboard.on('keydown-SPACE', () => {
+        this.input.keyboard.on('keydown-SPACE', () => {
+            this.catcher.toggleDirection();
+        }, this);
+        this.input.on('pointerdown', () => {
             this.catcher.toggleDirection();
         }, this);
         this.activeChars = [];
         this.pendingChars = [];
         this.disintegratingChars = []; // characters currently dissolving through the catcher mask
         this.dyingStrips = [];
+        this.lastBeatIndex = -1;
         this.fallDistance = (this.scale.width + gameSettings.lyrics.startXOffset) - this.catcher.x;
         this.charSize = parseInt(gameSettings.lyrics.fontSize);
+        this.lastSpawnedY = null;
 
         this.backgroundChar = new BackgroundChar(this);
+        this.time.addEvent({ delay: 500, callback: () => this.backgroundChar.clear() });
 
         this.charSpawnYPointer = new CharSpawnYPointer(
             this.scale.height / 2
         );
-
-        this.spawnPointerGraphics = this.add.graphics();
-        this.spawnPointerGraphics.fillStyle(gameSettings.colors.pointer, 1);
-        this.spawnPointerGraphics.fillCircle(0, 0, 10);
-        this.spawnPointerGraphics.setDepth(1);
-        this.spawnPointerGraphics.x = this.scale.width - 50;
-        this.spawnPointerGraphics.y = this.charSpawnYPointer.y;
 
         if (taPlayer && taPlayer.video) {
             this.loadLyrics(taPlayer.video.firstChar);
@@ -1222,66 +1545,18 @@ class GameScene extends Phaser.Scene {
             strokeThickness: 3
         }).setOrigin(0, 0).setDepth(1000);
 
-        this.scale.on('resize', (gameSize) => {
-            this.comboCounter.resize(gameSize.height);
-        });
-
         this.FLBackground = new FLTimelineBackground(this, this.scale.width, this.scale.height);
         this.FLBackground.setDepth(-10000);
 
-        this.createCatchParticleEmitter();
-        this.createDustEmitter();
-
-        const vizCfg = gameSettings.visualizer;
-        const vizX = (this.scale.width - (vizCfg.numBars * vizCfg.barWidth + (vizCfg.numBars - 1) * vizCfg.barGap)) / 2;
-        this.visualizer = new MusicVisualizer(this, vizX, this.scale.height - 20);
+        this.visualizer = new MusicVisualizer(this, this.scale.height / 2);
 
         this.lyricsDelay = gameSettings.lyrics.lyricsDelay;
-    }
-
-    // Creates the dust particle emitter used by disintegrating characters.
-    // Tint is set per-character at emit time (same pattern as catchEmitter).
-    createDustEmitter() {
-        // Reuses the "__particle" texture created by createCatchParticleEmitter()
-        const d = gameSettings.disintegration;
-
-        this.dustEmitter = this.add.particles(0, 0, "__particle", {
-            emitting: false,
-            lifespan: d.dustLifespan,
-            speed: { min: d.dustSpeedMin, max: d.dustSpeedMax },
-            angle: { min: -30, max: 30 },
-            scale: { start: d.dustScaleStart, end: d.dustScaleEnd, ease: "quad.out" },
-            alpha: { start: 0.8, end: 0, ease: "linear" },
-        });
-    }
-
-    createCatchParticleEmitter() {
-        if (!this.textures.exists("__particle")) {
-            const g = this.add.graphics();
-            g.fillStyle(0xffffff, 1);
-            g.fillCircle(4, 4, 4);
-            g.generateTexture("__particle", 8, 8);
-            g.destroy();
-        }
-
-        const pc = gameSettings.particles;
-
-        this.catchEmitter = this.add.particles(0, 0, "__particle", {
-            emitting: false,
-            lifespan: pc.lifespan,
-            quantity: pc.count,
-            speed: { min: pc.speedMin, max: pc.speedMax },
-            angle: { min: pc.angleMin, max: pc.angleMax },
-            scale: { start: pc.scaleStart, end: pc.scaleEnd, ease: "quad.out" },
-            alpha: { start: 1, end: 0, ease: "linear" },
-            gravityY: pc.gravityY,
-        });
     }
 
     update(time, delta) {
         this.fpsText.setText("FPS: " + Math.round(this.game.loop.actualFps));
 
-        // Cap delta to 100 ms (≈ 10 fps minimum) so a tab-unfocus spike can't throw the
+        // Cap delta to 100 ms (â‰ˆ 10 fps minimum) so a tab-unfocus spike can't throw the
         // spawn pointer or catcher to an extreme position on the first resumed frame.
         const deltaMs = Math.min(delta, 100);
         const deltaSec = deltaMs / 1000;
@@ -1292,26 +1567,38 @@ class GameScene extends Phaser.Scene {
         const songTime = taPlayer.timer?.position ?? 0;
         const startX = w + gameSettings.lyrics.startXOffset;
 
-        // Visualizer: show during silence, hide the moment a character is on screen
         this.visualizer.update(taPlayer);
-        const timeToNextSpawn = this.pendingChars.length > 0
-            ? (this.pendingChars[0].startTime + this.lyricsDelay - this.fallTime) - songTime
-            : Infinity;
-        if (this.activeChars.length === 0 && timeToNextSpawn > gameSettings.visualizer.minDelayTrigger) {
-            if (!this.visualizer.enabled) this.visualizer.enable();
-        } else if (this.activeChars.length > 0 || timeToNextSpawn < gameSettings.visualizer.minDelayTrigger / 3) {
-            if (this.visualizer.enabled) this.visualizer.disable();
-        }
 
         this.FLBackground.update(songTime, startX, this.catcher.x, this.fallTime);
         this.catcher.update(deltaSec, h);
-        this.spawnPointerGraphics.y = this.charSpawnYPointer.y;
         this.charSpawnYPointer.update(deltaSec, h);
         this.spawnPendingChars(songTime, startX, w, h);
         this.updateActiveChars(songTime, startX, deltaSec);
         this.updateDisintegratingChars(deltaMs);
         this.destroyStrips(deltaMs);
         this.backgroundChar.update(songTime, deltaMs);
+
+        const beat = taPlayer.findBeat?.(songTime);
+        if (beat && beat.index !== this.lastBeatIndex) {
+            this.lastBeatIndex = beat.index;
+            if (!lowPowerMode) this.triggerBeatPinch();
+        }
+    }
+
+    triggerBeatPinch() {
+        const targets = [];
+        for (const ac of this.activeChars) {
+            if (ac.barrelFX) targets.push(ac.barrelFX);
+        }
+        if (targets.length === 0) return;
+        const cfg = gameSettings.beatPinch;
+        this.tweens.add({
+            targets,
+            amount: cfg.amount,
+            duration: cfg.duration,
+            yoyo: true,
+            ease: cfg.ease,
+        });
     }
 
     // Advances each caught character through its dissolve animation each frame
@@ -1345,7 +1632,7 @@ class GameScene extends Phaser.Scene {
         const tint =
             gameSettings.tintCycle[wordIndex % gameSettings.tintCycle.length];
 
-        return this.tintColor(phraseColor, tint);
+        return tintColor(phraseColor, tint);
     }
 
     spawnPendingChars(time, startX, sceneWidth, sceneHeight) {
@@ -1376,26 +1663,14 @@ class GameScene extends Phaser.Scene {
 
                 let textToRender = nextChar.text;
 
-                // Prevent punctuation from spawning directly on top of the next character.
                 let spawnX = startX;
                 let spawnY = this.charSpawnYPointer.y;
 
-                // Closing punctuation: attach to previous character.
-                if (
-                    gameSettings.lyrics.trailingChars.includes(textToRender) &&
-                    this.activeChars.length > 0
-                ) {
-                    const previousObj =
-                        this.activeChars[this.activeChars.length - 1].obj;
-
-                    spawnX = previousObj.x + previousObj.width;
-                    spawnY = previousObj.y;
-                }
-
-                // Opening punctuation: shift slightly left so that the
-                // next character visually follows it.
-                else if (gameSettings.lyrics.leadingChars.includes(textToRender)) {
-                    spawnX -= gameSettings.lyrics.fontSize * gameSettings.lyrics.leadingCharShift;
+                if (gameSettings.lyrics.trailingChars.includes(textToRender)) {
+                    // Stay on the same row as the previous character regardless of activeChars state
+                    spawnY = this.lastSpawnedY ?? spawnY;
+                } else if (gameSettings.lyrics.leadingChars.includes(textToRender)) {
+                    spawnX -= this.charSize * gameSettings.lyrics.leadingCharShift;
                 }
 
                 const charObj = this.add.text(
@@ -1410,20 +1685,18 @@ class GameScene extends Phaser.Scene {
                 ).setOrigin(0.5);
 
                 // For normal characters, shift vertically when they would overlap the previous one.
-                // X position is tied to song timing, so we offset Y instead of X.
                 if (
-                    this.activeChars.length > 0 &&
                     !gameSettings.lyrics.trailingChars.includes(textToRender) &&
-                    !gameSettings.lyrics.leadingChars.includes(textToRender)
+                    !gameSettings.lyrics.leadingChars.includes(textToRender) &&
+                    this.activeChars.length > 0
                 ) {
                     const prev = this.activeChars[this.activeChars.length - 1];
                     const prevProgress = (time - (prev.effectiveStartTime - this.fallTime)) / this.fallTime;
                     const prevX = prev.startX - (prev.startX - this.catcher.x) * prevProgress;
                     const gap = (startX - charObj.width * 0.5) - (prevX + prev.obj.width * 0.5);
                     if (gap < gameSettings.lyrics.minCharSpacing) {
-                        spawnY += this.charSpawnYPointer.direction * gameSettings.lyrics.overlapYShift;
                         spawnY = Phaser.Math.Clamp(
-                            spawnY,
+                            spawnY + this.charSpawnYPointer.direction * gameSettings.lyrics.overlapYShift,
                             gameSettings.lyrics.marginY,
                             sceneHeight - gameSettings.lyrics.marginY
                         );
@@ -1431,24 +1704,28 @@ class GameScene extends Phaser.Scene {
                     }
                 }
 
-                const stripLength =
-                    nextChar.endTime - nextChar.startTime - this.charSize;
+                this.lastSpawnedY = spawnY;
+
+                const stripLength = nextChar.endTime - nextChar.startTime - this.charSize;
 
                 this.charGroup.add(charObj);
+                charObj.body.setAllowGravity(false);
+                charObj.body.setSize(this.charSize, this.charSize, true);
 
-                this.activeChars.push(
-                    new ActiveChar(
-                        this,
-                        nextChar,
-                        charObj,
-                        spawnX,
-                        spawnY,
-                        stripLength,
-                        this.charSize / 5,
-                        auraOnSpawn,
-                        effectiveStartTime
-                    )
+                const ac = new ActiveChar(
+                    this,
+                    nextChar,
+                    charObj,
+                    spawnX,
+                    spawnY,
+                    stripLength,
+                    this.charSize / 5,
+                    auraOnSpawn,
+                    effectiveStartTime
                 );
+                charObj.enableFilters();
+                ac.barrelFX = charObj.filters.internal.addBarrel(1.0);
+                this.activeChars.push(ac);
 
                 // Slow the spawn pointer while a long strip is live, then restore
                 if (stripLength >= gameSettings.lyrics.minDelayLongChar) {
@@ -1463,35 +1740,6 @@ class GameScene extends Phaser.Scene {
                 break;
             }
         }
-    }
-
-    hexToRgb(hex) {
-        hex = hex.replace("#", "");
-
-        return {
-            r: parseInt(hex.substring(0, 2), 16),
-            g: parseInt(hex.substring(2, 4), 16),
-            b: parseInt(hex.substring(4, 6), 16),
-        };
-    }
-
-    rgbToHex(r, g, b) {
-        return "#" +
-            [r, g, b]
-                .map(v => Math.max(0, Math.min(255, Math.round(v))))
-                .map(v => v.toString(16).padStart(2, "0"))
-                .join("");
-    }
-
-    tintColor(hex, factor) {
-        // Multiplies each RGB channel by factor: <1 darkens, >1 brightens
-        const rgb = this.hexToRgb(hex);
-
-        return this.rgbToHex(
-            rgb.r * factor,
-            rgb.g * factor,
-            rgb.b * factor
-        );
     }
 
     destroyStrips(deltaMs) {
@@ -1511,7 +1759,8 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // Slow the catcher while strips are draining; restore when all are gone
+        // Slow the catcher while strips drain so the player can't rush to the next character
+        // while the current note is still "playing" — long held notes naturally create pacing gaps.
         this.catcher.changeMaxSpeed(
             this.dyingStrips.length > 0
                 ? gameSettings.catcher.slowedSpeed
@@ -1522,7 +1771,7 @@ class GameScene extends Phaser.Scene {
     updateActiveChars(time, startX, delta) {
         for (let i = this.activeChars.length - 1; i >= 0; i--) {
             const item = this.activeChars[i];
-            const shouldRemove = item.update(time, startX, this.catcher.x, this.fallTime, delta, this.destroyThreshold, this.fallDistance, this.charSize, this.dyingStrips);
+            const shouldRemove = item.update(time, this.catcher.x, this.fallTime, delta, this.destroyThreshold, this.fallDistance, this.charSize, this.dyingStrips);
             if (shouldRemove) {
                 this.activeChars.splice(i, 1);
                 this.comboCounter.reset();
@@ -1568,6 +1817,7 @@ class GameScene extends Phaser.Scene {
 document.body.style.backgroundColor = gameSettings.colors.background;
 document.body.style.margin = "0";
 document.body.style.overflow = "hidden";
+introVideoElement = createIntroVideoElement();
 
 const config = {
     type: Phaser.AUTO,
@@ -1576,7 +1826,7 @@ const config = {
     height: window.innerHeight,
     transparent: true,
     physics: { default: "arcade" },
-    scene: [BootScene, LoadScene, TitleScene, GameScene],
+    scene: [BootScene, TitleScene, GameScene],
     scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH }
 };
 
@@ -1596,7 +1846,7 @@ if (gameSettings.api.fftDataUrl) {
         .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
         .then(data => {
             if (data.numBars !== gameSettings.visualizer.numBars)
-                console.warn(`[Visualizer] fft-data numBars (${data.numBars}) ≠ app numBars (${gameSettings.visualizer.numBars}) — regenerate with matching settings`);
+                console.warn(`[Visualizer] fft-data numBars (${data.numBars}) â‰  app numBars (${gameSettings.visualizer.numBars}) â€” regenerate with matching settings`);
             precomputedFFTData = data;
             console.log(`[Visualizer] Pre-computed FFT loaded: ${data.frames.length} frames, ${(data.durationMs / 1000).toFixed(1)}s`);
         })
