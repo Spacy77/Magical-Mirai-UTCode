@@ -1,3 +1,10 @@
+@font-face {
+    font-family: 'EnkaDotMincho24';
+    src: url('../media/font/EnkaDotMincho24.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+}
+
 /* Basic reset and full-viewport layout */
 html, body {
     margin: 0;
@@ -6,7 +13,7 @@ html, body {
     height: 100%;
     overflow: hidden;
     background-color: #f0f0f0;
-    font-family: "Noto Sans JP", sans-serif;
+    font-family: 'EnkaDotMincho24', sans-serif;
 }
 
 /* Container where Phaser mounts the canvas */
@@ -20,11 +27,41 @@ html, body {
     display: none;
 }
 
-/* Small utility classes */
-.visually-hidden {
-    position: absolute !important;
-    width: 1px; height: 1px; padding: 0; margin: -1px;
-    overflow: hidden; clip: rect(0 0 0 0); border: 0;
+/* Add or override more styles here as needed */
+
+/* Portrait rotation overlay — only shown on small screens in portrait */
+#rotate-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background-color: #111111;
+    color: #E0E0E0;
+    align-items: center;
+    justify-content: center;
+    font-family: 'EnkaDotMincho24', sans-serif;
+    text-align: center;
 }
 
-/* Add or override more styles here as needed */
+#rotate-icon {
+    font-size: 72px;
+    animation: spin90 1.5s ease-in-out infinite alternate;
+    display: block;
+    margin-bottom: 16px;
+    color: #8A2BE2;
+}
+
+#rotate-content p {
+    font-size: 20px;
+    line-height: 1.6;
+    margin: 0;
+}
+
+@keyframes spin90 {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(90deg); }
+}
+
+@media screen and (orientation: portrait) and (max-width: 900px) {
+    #rotate-overlay { display: flex; }
+}

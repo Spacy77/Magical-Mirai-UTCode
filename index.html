@@ -3,20 +3,38 @@
 <head>
     <meta charset="UTF-8" />
     <title>TextAlive Magical Mirai</title>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="src/styles.css">
+    <!-- Force the browser to load EnkaDotMincho24 before the canvas renders text -->
+    <style>
+        #font-preload { position: absolute; visibility: hidden; pointer-events: none;
+                        font-family: 'EnkaDotMincho24'; font-size: 1px; }
+    </style>
 </head>
 <body>
+    <div id="font-preload">あ</div>
     <div id="game-container"></div>
     <div id="media"></div>
+
+    <div id="rotate-overlay">
+        <div id="rotate-content">
+            <div id="rotate-icon">&#8635;</div>
+            <p>Please rotate your device<br>to landscape mode</p>
+        </div>
+    </div>
 
     <!-- External libs (CDN) -->
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
     <script src="https://unpkg.com/textalive-app-api/dist/index.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phaser@v4.1.0/dist/phaser.js"></script>
 
-    <!-- Application script (extracted) -->
-    <script src="src/app.js"></script>
+    <!-- Application script: deferred until all @font-face fonts are ready in the canvas engine -->
+    <script>
+        document.fonts.ready.then(function () {
+            var s = document.createElement('script');
+            s.src = 'src/app.js';
+            document.body.appendChild(s);
+        });
+    </script>
     
 </body>
 </html>

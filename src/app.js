@@ -1,4 +1,4 @@
-const gameSettings = {
+﻿const gameSettings = {
     // -- TextAlive API --------------------------------------------------------
     api: {
         token: "1O5BTRwWsXT6TfAP",
@@ -109,7 +109,7 @@ const gameSettings = {
             "「", "『", "（", "［", "【", "〈", "《"
         ],
 
-        lyricsDelay: 200
+        lyricsDelay: 250
     },
 
     // -- Background large-character flash effect -------------------------------
