@@ -7,7 +7,9 @@ Lyrics fall from the right side of the screen in time with the music. The player
 
 ## How to launch
 
-**The only requirement is a local HTTP server.** Opening `index.html` directly via `file://` will not work because the browser blocks cross-origin requests needed by the TextAlive API and the FFT data file.
+No backend server, Python script, or generated FFT JSON is required. The music visualizer is driven directly by TextAlive song-map signals in the browser.
+
+Opening `index.html` directly can work in permissive browser setups. If your browser blocks TextAlive/CDN/local media from `file://`, serve the folder with any tiny static HTTP server.
 
 ### Quickest method : VS Code Live Server
 
@@ -57,10 +59,7 @@ src/
   app.js            : all game logic (single file)
   styles.css        : minimal layout CSS
 media/
-  fft-data.json     : pre-computed FFT data for the music visualizer
-tools/
-  generate-fft.html : offline tool used to generate fft-data.json
-  README.md         : instructions for regenerating FFT data
+  miku.webm         : intro video asset
 ```
 
 Please do not delete :

@@ -3,9 +3,6 @@
     api: {
         token: "1O5BTRwWsXT6TfAP",
         songUrl: "https://piapro.jp/t/B3yJ/20251215061727", // go to textAlive website to find the link, it is not directly on piapro
-        // Path to pre-computed FFT JSON (run tools/generate-fft.html to create it).
-        // Set to "media/fft-data.json" after placing the generated file there.
-        fftDataUrl: "media/fft-data.json",
     },
     // Volume sent to the TextAlive player (0-100)
     songVolume: 70,
@@ -222,7 +219,7 @@
     },
 
     // -- Music visualizer -----------------------------------------------------
-    // Permanent background bar EQ driven by pre-computed FFT data.
+    // Permanent background bar EQ driven directly by TextAlive song-map data.
     // Mirrored vertically around the screen center; always visible at low opacity.
     visualizer: {
         numBars: 45,
@@ -231,15 +228,19 @@
         segmentGap: 3,
         xOffset: 200,          // px to shift the bar group right of center (positive = right)
         backgroundAlpha: 0.66,
-        gain: 3.5,
-        smoothingUp: 0.85,
-        smoothingDown: 0.06,
-        // Auto-gain: slowly normalises output so intensity stays consistent across the song
-        agcTargetLevel: 0.55,  // desired smoothed peak as fraction of full scale
-        agcSmoothingUp: 0.01,  // fast attack â€” damps loud spikes quickly
-        agcSmoothingDown: 0.001, // slow release â€” rises gently after a loud section
-        agcMin: 0.4,           // minimum gain multiplier (prevents over-amplifying silence)
-        agcMax: 7.0,           // maximum gain multiplier
+        gain: 1.0,
+        restLevel: 0.006,
+        vocalWeight: 0.66,
+        beatWeight: 0.36,
+        arousalWeight: 0.04,
+        chorusBoost: 0.055,
+        shimmerAmount: 0.22,
+        beatSharpness: 5.2,
+        formantDrift: 0.32,
+        peakSharpness: 1.9,
+        noiseGate: 0.045,
+        smoothingUp: 0.62,
+        smoothingDown: 0.14,
         // Fraction of bars on each side that pinch to zero height (prevents hard-crop look at edges)
         edgeFadeWidth: 0.06,
         gradientStops: [
@@ -1198,43 +1199,188 @@ class MusicVisualizer {
         this.scene = scene;
         this.y = y;
         this.levels = new Float32Array(gameSettings.visualizer.numBars).fill(0);
+        this.bandPhase = new Float32Array(gameSettings.visualizer.numBars);
         this.segmentColors = this._buildGradient();
         this.graphics = scene.add.graphics().setDepth(-5).setAlpha(gameSettings.visualizer.backgroundAlpha);
-        // Start AGC peak at target so the first notes aren't blasted or silent
-        this._agcPeak = gameSettings.visualizer.agcTargetLevel;
+        this._maxVocalAmplitude = 0;
+        this._vocalPeak = 0.001;
+        this._lastChordName = "";
+        this._lastChordHash = 0.5;
+
+        for (let b = 0; b < this.bandPhase.length; b++)
+            this.bandPhase[b] = this._hashUnit(`bar-${b}`) * Math.PI * 2;
     }
 
     update(taPlayer) {
-        if (precomputedFFTData) this._readPrecomputedFFT(taPlayer.timer.position);
+        const positionMs = taPlayer?.timer?.position ?? taPlayer?.mediaPosition ?? 0;
+        this._readTextAliveSignals(taPlayer, positionMs);
         this._draw();
     }
 
-    _readPrecomputedFFT(positionMs) {
-        const d   = precomputedFFTData;
+    _readTextAliveSignals(taPlayer, positionMs) {
         const cfg = gameSettings.visualizer;
-        const frameIndex = Math.min(Math.floor(positionMs / d.intervalMs), d.frames.length - 1);
-        const frame = d.frames[frameIndex];
-
-        // AGC: track the peak raw signal with a slow envelope follower
-        let peakRaw = 0;
-        for (let b = 0; b < cfg.numBars; b++) {
-            const raw = (frame[b] ?? 0) / 255;
-            if (raw > peakRaw) peakRaw = raw;
-        }
-        const peakAlpha = peakRaw > this._agcPeak ? cfg.agcSmoothingUp : cfg.agcSmoothingDown;
-        this._agcPeak += (peakRaw - this._agcPeak) * peakAlpha;
-
-        const autoGain = Phaser.Math.Clamp(
-            cfg.agcTargetLevel / Math.max(this._agcPeak, 0.01),
-            cfg.agcMin, cfg.agcMax
+        const vocal = this._readVocalLevel(taPlayer, positionMs);
+        const beat = this._readBeatPulse(taPlayer, positionMs);
+        const chorus = this._readChorusLevel(taPlayer, positionMs);
+        const va = this._readValenceArousal(taPlayer, positionMs);
+        const arousal = va ? this._clamp((va.a + 1) * 0.5, 0, 1) : 0.5;
+        const valence = va ? this._clamp((va.v + 1) * 0.5, 0, 1) : 0.5;
+        const chordHash = this._readChordHash(taPlayer, positionMs);
+        const timeSec = positionMs / 1000;
+        const formantCenter = this._clamp(
+            0.40 + (chordHash - 0.5) * 0.26 + Math.sin(timeSec * cfg.formantDrift) * 0.06,
+            0.15, 0.82
+        );
+        const formantWidth = 0.055 + arousal * 0.075;
+        const harmonicCenter = this._wrap01(formantCenter * (1.50 + valence * 0.34) + 0.10 + chordHash * 0.08);
+        const beatEnergy = Math.min(1, beat * (0.75 + arousal * 0.35));
+        const chorusEnergy = chorus * cfg.chorusBoost;
+        const globalEnergy = this._clamp(
+            cfg.restLevel
+            + vocal * cfg.vocalWeight
+            + beatEnergy * cfg.beatWeight
+            + arousal * cfg.arousalWeight
+            + chorusEnergy,
+            0, 1
         );
 
         for (let b = 0; b < cfg.numBars; b++) {
-            const raw = (frame[b] ?? 0) / 255;
-            const target = Math.min(1, raw * cfg.gain * autoGain);
+            const normX = cfg.numBars === 1 ? 0.5 : b / (cfg.numBars - 1);
+            const bassBias = Math.pow(1 - normX, 1.65);
+            const trebleBias = Math.pow(normX, 1.15);
+            const formantDistance = (normX - formantCenter) / formantWidth;
+            const formant = Math.pow(Math.exp(-formantDistance * formantDistance), cfg.peakSharpness);
+            const harmonicDistance = (normX - harmonicCenter) / (formantWidth * 0.72);
+            const harmonic = Math.pow(Math.exp(-harmonicDistance * harmonicDistance), cfg.peakSharpness + 0.45) * (0.24 + arousal * 0.20);
+            const bandShape = this._clamp(formant + harmonic, 0, 1);
+            const shimmer = 0.5 + 0.5 * Math.sin(
+                timeSec * (1.8 + normX * 2.4) + this.bandPhase[b] + chordHash * Math.PI * 2
+            );
+            const ripple = 0.5 + 0.5 * Math.sin(
+                timeSec * (4.2 + arousal * 1.3) - normX * 9.5 + valence * Math.PI * 2
+            );
+            const bandMotion = 1 + cfg.shimmerAmount * (shimmer * 0.7 + ripple * 0.3 - 0.5);
+            const shapedEnergy =
+                globalEnergy * bandShape * bandMotion
+                + beatEnergy * cfg.beatWeight * Math.pow(bassBias, 2.35)
+                + vocal * bandShape * 0.24
+                + arousal * Math.pow(trebleBias, 1.8) * bandShape * 0.08
+                + Math.pow(shimmer, 3.0) * cfg.restLevel;
+            const target = this._clamp(this._softGate(shapedEnergy * cfg.gain, cfg.noiseGate), 0, 1);
             const alpha  = target > this.levels[b] ? cfg.smoothingUp : cfg.smoothingDown;
             this.levels[b] += (target - this.levels[b]) * alpha;
         }
+    }
+
+    _readVocalLevel(taPlayer, positionMs) {
+        if (!taPlayer || typeof taPlayer.getVocalAmplitude !== "function") return 0;
+
+        let raw = 0;
+        try {
+            raw = taPlayer.getVocalAmplitude(positionMs) || 0;
+        } catch (_) {
+            return 0;
+        }
+
+        if (!this._maxVocalAmplitude && typeof taPlayer.getMaxVocalAmplitude === "function") {
+            try {
+                this._maxVocalAmplitude = taPlayer.getMaxVocalAmplitude() || 0;
+            } catch (_) {
+                this._maxVocalAmplitude = 0;
+            }
+        }
+
+        if (this._maxVocalAmplitude > 0)
+            return this._clamp(raw / this._maxVocalAmplitude, 0, 1);
+
+        const peakAlpha = raw > this._vocalPeak ? 0.08 : 0.004;
+        this._vocalPeak += (raw - this._vocalPeak) * peakAlpha;
+        return this._clamp(raw / Math.max(this._vocalPeak, 0.001), 0, 1);
+    }
+
+    _readBeatPulse(taPlayer, positionMs) {
+        if (!taPlayer || typeof taPlayer.findBeat !== "function") return 0;
+
+        try {
+            const beat = taPlayer.findBeat(positionMs);
+            if (!beat) return 0;
+
+            const progress = typeof beat.progress === "function"
+                ? beat.progress(positionMs)
+                : (positionMs - beat.startTime) / Math.max(beat.duration || 1, 1);
+            const downbeatBoost = beat.position <= 1 ? 1.15 : 0.9;
+            const pulse = Math.pow(1 - this._clamp(progress, 0, 1), gameSettings.visualizer.beatSharpness);
+            return this._clamp(pulse * downbeatBoost, 0, 1);
+        } catch (_) {
+            return 0;
+        }
+    }
+
+    _readChorusLevel(taPlayer, positionMs) {
+        if (!taPlayer || typeof taPlayer.findChorus !== "function") return 0;
+
+        try {
+            const chorus = taPlayer.findChorus(positionMs);
+            if (!chorus) return 0;
+
+            const progress = typeof chorus.progress === "function"
+                ? this._clamp(chorus.progress(positionMs), 0, 1)
+                : 0.5;
+            return 0.75 + Math.sin(progress * Math.PI) * 0.25;
+        } catch (_) {
+            return 0;
+        }
+    }
+
+    _readValenceArousal(taPlayer, positionMs) {
+        if (!taPlayer || typeof taPlayer.getValenceArousal !== "function") return null;
+
+        try {
+            const va = taPlayer.getValenceArousal(positionMs);
+            if (!va || !Number.isFinite(va.a) || !Number.isFinite(va.v)) return null;
+            return va;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    _readChordHash(taPlayer, positionMs) {
+        if (!taPlayer || typeof taPlayer.findChord !== "function") return this._lastChordHash;
+
+        try {
+            const chord = taPlayer.findChord(positionMs);
+            const name = chord?.name || "";
+            if (name && name !== this._lastChordName) {
+                this._lastChordName = name;
+                this._lastChordHash = this._hashUnit(name);
+            }
+        } catch (_) {
+            // Keep the previous chord color so the visualizer does not jump.
+        }
+
+        return this._lastChordHash;
+    }
+
+    _hashUnit(text) {
+        let hash = 2166136261;
+        for (let i = 0; i < text.length; i++) {
+            hash ^= text.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
+        }
+        return ((hash >>> 0) % 10000) / 10000;
+    }
+
+    _clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+    }
+
+    _softGate(value, threshold) {
+        if (value <= threshold) return 0;
+        return (value - threshold) / (1 - threshold);
+    }
+
+    _wrap01(value) {
+        return value - Math.floor(value);
     }
 
     _draw() {
@@ -1832,23 +1978,9 @@ const config = {
 
 const game = new Phaser.Game(config);
 
-let precomputedFFTData = null;
-
 const taPlayer = new Player({ app: { token: gameSettings.api.token }, mediaElement: document.querySelector("#media"), valenceArousalEnabled: true, vocalAmplitudeEnabled: true });
 
 taPlayer.addListener({
     onTimerReady() { isTextAliveReady = true; },
 });
 taPlayer.createFromSongUrl(gameSettings.api.songUrl);
-
-if (gameSettings.api.fftDataUrl) {
-    fetch(gameSettings.api.fftDataUrl)
-        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-        .then(data => {
-            if (data.numBars !== gameSettings.visualizer.numBars)
-                console.warn(`[Visualizer] fft-data numBars (${data.numBars}) â‰  app numBars (${gameSettings.visualizer.numBars}) â€” regenerate with matching settings`);
-            precomputedFFTData = data;
-            console.log(`[Visualizer] Pre-computed FFT loaded: ${data.frames.length} frames, ${(data.durationMs / 1000).toFixed(1)}s`);
-        })
-        .catch(err => console.warn('[Visualizer] Failed to load fft-data.json:', err.message));
-}
