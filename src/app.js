@@ -128,21 +128,17 @@
         startAlpha: 0.5             // initial opacity of the background character
     },
 
-    // -- Combo counter HUD (top-right) ----------------------------------------
+    // -- Combo counter HUD (bottom-left) --------------------------------------
     combo: {
-        xOffset: 100,          // distance from right edge for value texts
-        mainYOffset: 125,      // Y of combo-points value
-        scoreYOffset: 175,     // Y of total score value
+        xOffset: 45,           // distance from the left/right edge for HUD values
+        mainYOffset: 45,       // distance from bottom for combo-points value
+        precisionYOffset: 45,  // distance from top for precision value
         fontSize: 100,         // px (numeric so it's easier to do digit-width math)
         color: "#ffffff",
         ghostAlpha: 0.2,       // opacity of the ghost (echo) copy of the counter
         mainScaleBounce: 1.1,  // scale the main counter briefly grows to on increment
         ghostScaleBounce: 1.4, // scale the ghost briefly grows to on increment (more exaggerated)
         animDuration: 500,     // duration (ms) of the bounce-back tween
-        displayXOffset: 230,   // distance from right edge for label texts
-        displayMainYOffset: 90,   // Y of "Combo" label
-        displayScoreYOffset: 170, // Y of "Score" label
-        displayFontSize: 40
     },
 
     // -- Spawn-Y pointer ------------------------------------------------------
@@ -425,12 +421,14 @@ class ComboCounter {
         this.scene = scene;
         this.combo = 0;
         this.comboPoints = 0;
-        this.totalScore = 0;
-        this.varXOffset = 0; // grows as the digit count increases to keep text right-aligned
+        this.hits = 0;
+        this.misses = 0;
 
         const cfg = gameSettings.combo;
-        this.valueX   = scene.scale.width - cfg.xOffset;
-        this.displayX = scene.scale.width - cfg.displayXOffset;
+        this.comboX = cfg.xOffset;
+        this.comboY = scene.scale.height - cfg.mainYOffset;
+        this.precisionX = scene.scale.width - cfg.xOffset;
+        this.precisionY = cfg.precisionYOffset;
 
         const textStyle = (size, thickness) => ({
             fontFamily: gameSettings.fonts.ui,
@@ -441,53 +439,28 @@ class ComboCounter {
             strokeThickness: thickness,
         });
 
-        this.ghostText = scene.add.text(this.valueX, cfg.mainYOffset, "0", textStyle(cfg.fontSize, 4))
+        this.ghostText = scene.add.text(this.comboX, this.comboY, "0", textStyle(cfg.fontSize, 4))
             .setOrigin(0, 1).setAlpha(cfg.ghostAlpha).setDepth(100);
 
-        this.mainText = scene.add.text(this.valueX, cfg.mainYOffset, "0", textStyle(cfg.fontSize, 6))
+        this.mainText = scene.add.text(this.comboX, this.comboY, "0", textStyle(cfg.fontSize, 6))
             .setOrigin(0, 1).setDepth(101);
 
-        this.totalScoreText = scene.add.text(this.valueX, cfg.scoreYOffset, "0", textStyle(cfg.fontSize / 2, 6))
-            .setOrigin(0, 1).setDepth(102);
-
-        this.displayComboText = scene.add.text(this.displayX, cfg.displayMainYOffset, "Combo", textStyle(cfg.displayFontSize, 6))
-            .setOrigin(0, 1).setDepth(102);
-
-        this.displayTotalScoreText = scene.add.text(this.displayX, cfg.displayScoreYOffset, "Score", textStyle(cfg.displayFontSize, 6))
-            .setOrigin(0, 1).setDepth(102);
+        this.precisionText = scene.add.text(this.precisionX, this.precisionY, this.formatPrecision(), textStyle(cfg.fontSize / 2, 6))
+            .setOrigin(1, 0).setDepth(102);
     }
 
     increment() {
         this.combo++;
-        const prevLen = this.comboPoints.toString().length;
+        this.hits++;
         this.comboPoints = this.calcPointsCurrentCombo(this.combo);
-
-        // Each new digit widens the displayed number; shift all anchors left to keep right-edge aligned
-        if (this.comboPoints.toString().length > prevLen) {
-            this.varXOffset += gameSettings.combo.fontSize / 2;
-            this.ghostText.x             = this.valueX   - this.varXOffset;
-            this.mainText.x              = this.valueX   - this.varXOffset;
-            this.totalScoreText.x        = this.valueX   - this.varXOffset;
-            this.displayComboText.x      = this.displayX - this.varXOffset;
-            this.displayTotalScoreText.x = Math.min(this.displayTotalScoreText.x, this.displayX - this.varXOffset);
-        }
-
         this.updateText();
         this.playAnimation();
     }
 
-    reset() {
-        if (this.combo === 0) return;
-        this.totalScore += this.comboPoints;
+    miss() {
+        this.misses++;
         this.combo = 0;
         this.comboPoints = 0;
-        this.varXOffset = 0;
-
-        this.ghostText.x           = this.valueX;
-        this.mainText.x            = this.valueX;
-        this.totalScoreText.x      = this.valueX;
-        this.displayComboText.x    = this.displayX;
-        this.displayTotalScoreText.x = this.displayX;
 
         this.updateText();
         this.scene.tweens.killTweensOf([this.mainText, this.ghostText]);
@@ -498,7 +471,13 @@ class ComboCounter {
     updateText() {
         this.mainText.setText(this.comboPoints.toString());
         this.ghostText.setText(this.comboPoints.toString());
-        this.totalScoreText.setText((this.comboPoints + this.totalScore).toString());
+        this.precisionText.setText(this.formatPrecision());
+    }
+
+    formatPrecision() {
+        const totalJudged = this.hits + this.misses;
+        const percent = totalJudged > 0 ? (this.hits / totalJudged) * 100 : 100;
+        return `${percent.toFixed(2)}%`;
     }
 
     playAnimation() {
@@ -1920,7 +1899,7 @@ class GameScene extends Phaser.Scene {
             const shouldRemove = item.update(time, this.catcher.x, this.fallTime, delta, this.destroyThreshold, this.fallDistance, this.charSize, this.dyingStrips);
             if (shouldRemove) {
                 this.activeChars.splice(i, 1);
-                this.comboCounter.reset();
+                this.comboCounter.miss();
             }
         }
     }
