@@ -52,8 +52,8 @@
 
     // -- Fonts ----------------------------------------------------------------
     fonts: {
-        main:   '"EnkaDotMincho24", "Yu Gothic", "Hiragino Sans", sans-serif',
-        ui:     '"EnkaDotMincho24", "Yu Gothic", "Hiragino Sans", sans-serif',
+        main:   '"zpix", "Yu Gothic", "Hiragino Sans", sans-serif',
+        ui:     '"zpix", "Yu Gothic", "Hiragino Sans", sans-serif',
         bgChar: '"Yu Gothic", "Hiragino Sans", "Noto Sans JP", sans-serif',
     },
 
@@ -74,9 +74,12 @@
         height: 250,        // collision / visual height in px
         maxSpeed: 0.8,        // maximum normalized speed (fraction of scene height per second)
         slowedSpeed: 0.01,  // reduced speed while a strip is draining
-        responsiveness: 25.0, // exponential-smoothing factor : higher = snappier tracking
+        responsiveness: 10.0, // exponential-smoothing factor : higher = snappier tracking
         marginY: 80,         // minimum distance the catcher keeps from the top/bottom edges
-        animTime: 100
+        animTime: 100,
+        beatBobScaleY: 0.80,      // scaleY at peak vertical squeeze on each beat
+        beatBobDuration: 80,      // ms to reach peak (same back, yoyo)
+        beatBobEase: 'Quad.easeOut',
     },
 
     // -- Lyric characters -----------------------------------------------------
@@ -87,7 +90,7 @@
         marginY: 100,              // vertical safe zone : characters never spawn closer than this to the top/bottom
         fontSize: "130px",         // CSS font-size used for all lyric text objects
 
-        // A character that has moved past the catcher by more than (destroyOverflowRatio Ã— fallDistance)
+        // A character that has moved past the catcher by more than (destroyOverflowRatio Ã: fallDistance)
         // is removed even if it was never caught, preventing off-screen accumulation
         destroyOverflowRatio: 0.2,
 
@@ -102,16 +105,15 @@
         // Spacing : overlap prevention
         minCharSpacing: 20,      // min horizontal pixel gap before triggering a vertical shift
         overlapYShift: 80,       // vertical pixel offset applied to a character that would overlap the previous one
-        leadingCharShift: 1.1,  // fraction of fontSize to shift leading punctuation left so the next char follows it naturally
 
         // Japanese closing punctuation : always attached directly to the right edge of the previous character
         trailingChars: [
-            "ã€", "ã€‚", "ï¼", "ï¼Ÿ", "ã€", "ã€", "ï¼‰", "ï¼½", "ã€‘", "ã€‰", "ã€‹"
+            "、", "。", "！", "？", "」", "』", "）", "］", "】", "〉", "》"
         ],
 
         // Japanese opening punctuation : shifted left so the body text starts after them
         leadingChars: [
-            "ã€Œ", "ã€Ž", "ï¼ˆ", "ï¼»", "ã€", "ã€ˆ", "ã€Š"
+            "「", "『", "（", "［", "【", "〈", "《"
         ],
 
         lyricsDelay: 250
@@ -130,10 +132,10 @@
 
     // -- Combo counter HUD (bottom-left) --------------------------------------
     combo: {
-        xOffset: 45,           // distance from the left/right edge for HUD values
-        mainYOffset: 45,       // distance from bottom for combo-points value
-        precisionYOffset: 45,  // distance from top for precision value
-        fontSize: 100,         // px (numeric so it's easier to do digit-width math)
+        xOffset: 45,           // distance from the left edge
+        mainYOffset: 45,       // distance from bottom for the lowest element
+        captionFontSize: 18,   // px for the small labels above each number
+        fontSize: 100,         // px for the combo number
         color: "#ffffff",
         ghostAlpha: 0.2,       // opacity of the ghost (echo) copy of the counter
         mainScaleBounce: 1.1,  // scale the main counter briefly grows to on increment
@@ -201,7 +203,7 @@
     // -- Aura circle ----------------------------------------------------------
     // A soft glowing circle drawn behind characters spawned at wave direction changes.
     backgroundCircle: {
-        radiusMultiplier: 0.50, // circle radius = max(charWidth, charHeight) Ã— this
+        radiusMultiplier: 0.50, // circle radius = max(charWidth, charHeight) Ã: this
         alpha: 0.18,            // opacity of the circle (kept low so it doesn't overpower the character)
         fadeDuration: 300,      // ms over which the circle fades out when the character despawns
     },
@@ -216,27 +218,37 @@
 
     // -- Music visualizer -----------------------------------------------------
     // Permanent background bar EQ driven directly by TextAlive song-map data.
+    // No FFT or audio capture required : bar heights are synthesised from vocal
+    // amplitude, beat pulses, chorus sections, valence/arousal, and chord changes.
     // Mirrored vertically around the screen center; always visible at low opacity.
     visualizer: {
         numBars: 45,
-        barWidthRatio: 0.25,   // bar width as a fraction of per-bar cell (rest is gap)
+        barWidthRatio: 0.12,   // bar width as a fraction of per-bar cell (rest is gap)
         numSegments: 14,
         segmentGap: 3,
-        xOffset: 200,          // px to shift the bar group right of center (positive = right)
-        backgroundAlpha: 0.66,
-        gain: 1.0,
+        xOffset: 0,          // px to shift the bar group right of center (positive = right)
+        backgroundAlpha: 0.60,
+        gain: 1.0,             // master output multiplier applied after all signals are mixed
+
+        // Minimum bar activity when the song is otherwise silent : keeps the EQ subtly alive
         restLevel: 0.006,
-        vocalWeight: 0.66,
-        beatWeight: 0.36,
-        arousalWeight: 0.04,
-        chorusBoost: 0.055,
-        shimmerAmount: 0.22,
-        beatSharpness: 5.2,
-        formantDrift: 0.32,
-        peakSharpness: 1.9,
-        noiseGate: 0.045,
-        smoothingUp: 0.62,
-        smoothingDown: 0.14,
+
+        // Weights control how much each TextAlive signal contributes to the global energy level
+        vocalWeight: 0.66,     // vocal amplitude : dominant driver during sung phrases
+        beatWeight: 0.36,      // beat pulse : adds sharp transient peaks on each hit
+        arousalWeight: 0.04,   // valence/arousal "a" axis : lifts energy during intense moments
+        chorusBoost: 0.055,    // sustained lift applied while inside a chorus section
+
+        // Spectral shape parameters (control where energy concentrates across bars)
+        shimmerAmount: 0.22,   // amplitude of the slow per-band shimmer oscillation
+        beatSharpness: 5.2,    // exponent of the beat-pulse decay curve; higher = snappier transient
+        formantDrift: 0.32,    // rad/s rate at which the formant peak slowly drifts left/right
+        peakSharpness: 2.5,    // Gaussian sharpness of the spectral peaks; higher = narrower peaks, deeper valleys
+
+        noiseGate: 0.045,      // signals below this threshold are gated to zero (hides idle noise)
+        smoothingUp: 0.62,     // per-frame lerp factor when a bar is rising  (high = fast attack)
+        smoothingDown: 0.14,   // per-frame lerp factor when a bar is falling (low  = slow decay)
+
         // Fraction of bars on each side that pinch to zero height (prevents hard-crop look at edges)
         edgeFadeWidth: 0.06,
         gradientStops: [
@@ -393,6 +405,48 @@ function playIntroVideo(onComplete, onPlaybackBlocked, onFadeStart) {
     }
 }
 
+// Font glyph detection
+// Canvas renders nothing (or a tofu box identical to the fallback) when a font lacks a glyph.
+// We detect this by comparing pixel output of "fontName, monospace" vs "monospace" alone.
+// If identical, the font had no glyph and we skip it.
+const _glyphCache = new Map();
+
+function fontHasGlyph(fontName, char) {
+    const key = `${fontName}\x00${char}`;
+    if (_glyphCache.has(key)) return _glyphCache.get(key);
+
+    const size = 24;
+    const canvas = document.createElement('canvas');
+    canvas.width = size * 2;
+    canvas.height = size * 2;
+    const ctx = canvas.getContext('2d');
+
+    const sample = (font) => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#fff';
+        ctx.font = `${size}px ${font}`;
+        ctx.fillText(char, 4, size + 4);
+        return ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    };
+
+    const withFont    = sample(`"${fontName}", monospace`);
+    const withoutFont = sample('monospace');
+
+    let hasGlyph = false;
+    for (let i = 0; i < withFont.length; i++) {
+        if (withFont[i] !== withoutFont[i]) { hasGlyph = true; break; }
+    }
+
+    _glyphCache.set(key, hasGlyph);
+    return hasGlyph;
+}
+
+function getLyricFont(char) {
+    const primaryFont = 'zpix';
+    if (fontHasGlyph(primaryFont, char)) return gameSettings.fonts.main;
+    return '"Yu Gothic", "Hiragino Sans", "Noto Sans JP", sans-serif';
+}
+
 // Color utilities
 function hexToRgb(hex) {
     hex = hex.replace("#", "");
@@ -425,12 +479,18 @@ class ComboCounter {
         this.misses = 0;
 
         const cfg = gameSettings.combo;
-        this.comboX = cfg.xOffset;
-        this.comboY = scene.scale.height - cfg.mainYOffset;
-        this.precisionX = scene.scale.width - cfg.xOffset;
-        this.precisionY = cfg.precisionYOffset;
+        const x        = cfg.xOffset;
+        const accSize  = Math.round(cfg.fontSize / 2);
+        const capSize  = cfg.captionFontSize;
+        const baseY    = scene.scale.height - cfg.mainYOffset;
 
-        const textStyle = (size, thickness) => ({
+        // Layout (bottom to top): accuracy number → accuracy caption → gap → combo number → combo caption
+        const accNumY   = baseY;
+        const accCapY   = accNumY   - accSize      - 3;
+        const comboNumY = accCapY   - capSize      - 10;
+        const comboCapY = comboNumY - cfg.fontSize - 3;
+
+        const numStyle = (size, thickness) => ({
             fontFamily: gameSettings.fonts.ui,
             fontSize: `${size}px`,
             color: cfg.color,
@@ -439,14 +499,28 @@ class ComboCounter {
             strokeThickness: thickness,
         });
 
-        this.ghostText = scene.add.text(this.comboX, this.comboY, "0", textStyle(cfg.fontSize, 4))
+        const capStyle = {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: `${capSize}px`,
+            color: "#aaaaaa",
+            stroke: "#000000",
+            strokeThickness: 3,
+        };
+
+        this.comboCaption = scene.add.text(x, comboCapY, "COMBO", capStyle)
+            .setOrigin(0, 1).setDepth(100);
+
+        this.ghostText = scene.add.text(x, comboNumY, "0", numStyle(cfg.fontSize, 4))
             .setOrigin(0, 1).setAlpha(cfg.ghostAlpha).setDepth(100);
 
-        this.mainText = scene.add.text(this.comboX, this.comboY, "0", textStyle(cfg.fontSize, 6))
+        this.mainText = scene.add.text(x, comboNumY, "0", numStyle(cfg.fontSize, 6))
             .setOrigin(0, 1).setDepth(101);
 
-        this.precisionText = scene.add.text(this.precisionX, this.precisionY, this.formatPrecision(), textStyle(cfg.fontSize / 2, 6))
-            .setOrigin(1, 0).setDepth(102);
+        this.accCaption = scene.add.text(x, accCapY, "ACCURACY", capStyle)
+            .setOrigin(0, 1).setDepth(102);
+
+        this.precisionText = scene.add.text(x, accNumY, this.formatPrecision(), numStyle(accSize, 4))
+            .setOrigin(0, 1).setDepth(102);
     }
 
     increment() {
@@ -504,7 +578,7 @@ class WaveState {
         this.patterns = gameSettings.wave.patterns;
     }
 
-    // Returns true when a flip fires — the caller uses this to trigger the spawn-aura effect.
+    // Returns true when a flip fires : the caller uses this to trigger the spawn-aura effect.
     advance(songTime) {
         if (songTime < this.nextFlipTime) return false;
         this.currentTravelBeats = Phaser.Utils.Array.GetRandom(this.patterns);
@@ -525,6 +599,7 @@ class Catcher {
             "miku_standing"
         );
         this.sprite.setDisplaySize(gameSettings.catcher.width, gameSettings.catcher.height);
+        this._baseScaleY = this.sprite.scaleY;
 
         scene.physics.add.existing(this.sprite);
         this.sprite.body.setImmovable(true);
@@ -568,6 +643,18 @@ class Catcher {
 
     get y() {
         return this.sprite.y;
+    }
+
+    triggerBeatBob() {
+        const cfg = gameSettings.catcher;
+        this.scene.tweens.killTweensOf(this.sprite);
+        this.scene.tweens.add({
+            targets: this.sprite,
+            scaleY: this._baseScaleY * cfg.beatBobScaleY,
+            duration: cfg.beatBobDuration,
+            yoyo: true,
+            ease: cfg.beatBobEase,
+        });
     }
 
     playKnockAnim() {
@@ -1177,80 +1264,133 @@ class MusicVisualizer {
     constructor(scene, y) {
         this.scene = scene;
         this.y = y;
-        this.levels = new Float32Array(gameSettings.visualizer.numBars).fill(0);
+        this.levels  = new Float32Array(gameSettings.visualizer.numBars).fill(0);
+        this._scratch = new Float32Array(gameSettings.visualizer.numBars); // reused by the blur pass
+        // Per-bar random phase offsets so the shimmer oscillations are never in sync
         this.bandPhase = new Float32Array(gameSettings.visualizer.numBars);
         this.segmentColors = this._buildGradient();
-        this.graphics = scene.add.graphics().setDepth(-5).setAlpha(gameSettings.visualizer.backgroundAlpha);
-        this._maxVocalAmplitude = 0;
-        this._vocalPeak = 0.001;
+        this.graphics = scene.add.graphics().setDepth(-9999).setAlpha(gameSettings.visualizer.backgroundAlpha);
+        this._currentAlpha = gameSettings.visualizer.backgroundAlpha; // tracked separately for lerping
+        this._maxVocalAmplitude = 0; // cached from getMaxVocalAmplitude; 0 = not yet fetched
+        this._vocalPeak = 0.001;     // fallback running peak when the max is unavailable
         this._lastChordName = "";
-        this._lastChordHash = 0.5;
+        this._lastChordHash = 0.5;   // chord name hashed to [0,1]; drives formant/harmonic position
 
         for (let b = 0; b < this.bandPhase.length; b++)
             this.bandPhase[b] = this._hashUnit(`bar-${b}`) * Math.PI * 2;
     }
 
-    update(taPlayer) {
+    update(taPlayer, hasChars) {
         const positionMs = taPlayer?.timer?.position ?? taPlayer?.mediaPosition ?? 0;
         this._readTextAliveSignals(taPlayer, positionMs);
+
+        // Fade to full opacity when the screen is empty so the EQ takes focus,
+        // then fade back to backgroundAlpha once characters appear.
+        const cfg = gameSettings.visualizer;
+        const targetAlpha = hasChars ? cfg.backgroundAlpha : 1.0;
+        this._currentAlpha += (targetAlpha - this._currentAlpha) * 0.04;
+        this.graphics.setAlpha(this._currentAlpha);
+
         this._draw();
     }
 
+    // Synthesises a convincing EQ shape from TextAlive song-map signals.
+    // The key design rule: each spectral region has its OWN peak driven by its OWN signal.
+    // Additive global floors (the old approach) raise ALL bars uniformly, killing valleys.
+    // Here, bars between peaks stay near restLevel because only nearby peaks contribute.
+    // Shimmer is multiplicative so it animates peaks without lifting the troughs.
     _readTextAliveSignals(taPlayer, positionMs) {
         const cfg = gameSettings.visualizer;
-        const vocal = this._readVocalLevel(taPlayer, positionMs);
-        const beat = this._readBeatPulse(taPlayer, positionMs);
-        const chorus = this._readChorusLevel(taPlayer, positionMs);
-        const va = this._readValenceArousal(taPlayer, positionMs);
-        const arousal = va ? this._clamp((va.a + 1) * 0.5, 0, 1) : 0.5;
-        const valence = va ? this._clamp((va.v + 1) * 0.5, 0, 1) : 0.5;
+        const vocal     = this._readVocalLevel(taPlayer, positionMs);
+        const beat      = this._readBeatPulse(taPlayer, positionMs);
+        const chorus    = this._readChorusLevel(taPlayer, positionMs);
+        const va        = this._readValenceArousal(taPlayer, positionMs);
+        const arousal   = va ? this._clamp((va.a + 1) * 0.5, 0, 1) : 0.5;
+        const valence   = va ? this._clamp((va.v + 1) * 0.5, 0, 1) : 0.5;
         const chordHash = this._readChordHash(taPlayer, positionMs);
-        const timeSec = positionMs / 1000;
-        const formantCenter = this._clamp(
-            0.40 + (chordHash - 0.5) * 0.26 + Math.sin(timeSec * cfg.formantDrift) * 0.06,
-            0.15, 0.82
-        );
-        const formantWidth = 0.055 + arousal * 0.075;
-        const harmonicCenter = this._wrap01(formantCenter * (1.50 + valence * 0.34) + 0.10 + chordHash * 0.08);
-        const beatEnergy = Math.min(1, beat * (0.75 + arousal * 0.35));
-        const chorusEnergy = chorus * cfg.chorusBoost;
-        const globalEnergy = this._clamp(
-            cfg.restLevel
-            + vocal * cfg.vocalWeight
-            + beatEnergy * cfg.beatWeight
-            + arousal * cfg.arousalWeight
-            + chorusEnergy,
-            0, 1
-        );
+        const timeSec   = positionMs / 1000;
+        // Chorus boosts all peak amplitudes slightly during the hook
+        const chorusMult = 1 + chorus * cfg.chorusBoost;
+
+        // Six spectral peaks, each anchored to a frequency band and driven by its own signal.
+        // Centers drift slowly so the EQ stays alive on held notes and reacts to chord changes.
+        const peaks = [
+            // Sub-bass: sharp beat impulse at the far left
+            {
+                center: 0.06 + chordHash * 0.03,
+                width:  0.055,
+                amp:    beat * 0.90 * chorusMult,
+            },
+            // Bass: beat body + vocal low-end; slides left/right with chord
+            {
+                center: this._clamp(0.17 + (chordHash - 0.5) * 0.09 + Math.sin(timeSec * 0.28) * 0.025, 0.08, 0.28),
+                width:  0.070,
+                amp:    (beat * 0.65 + vocal * 0.38) * chorusMult,
+            },
+            // Vocal formant: dominant mid-low peak; chord shifts its position like a vowel resonance
+            {
+                center: this._clamp(0.35 + (chordHash - 0.5) * 0.22 + Math.sin(timeSec * cfg.formantDrift) * 0.055, 0.18, 0.58),
+                width:  0.075 + arousal * 0.030,
+                amp:    vocal * 0.90 * chorusMult,
+            },
+            // Mid: arousal-driven; counter-drifts so it stays separated from the formant
+            {
+                center: this._clamp(0.54 + (0.5 - chordHash) * 0.14 + Math.sin(timeSec * cfg.formantDrift * 1.4 + 1.1) * 0.04, 0.36, 0.70),
+                width:  0.065,
+                amp:    (vocal * 0.50 + arousal * 0.55) * chorusMult,
+            },
+            // Upper harmonic: chord-derived interval above the formant; valence tints the position
+            {
+                center: this._clamp(0.62 + chordHash * 0.18 + valence * 0.09, 0.55, 0.88),
+                width:  0.060,
+                amp:    (arousal * 0.65 + vocal * 0.28) * 0.85 * chorusMult,
+            },
+            // Air / presence: high-frequency shimmer; always somewhat active when arousal is high
+            {
+                center: this._clamp(0.83 + Math.sin(timeSec * 0.65) * 0.04, 0.74, 0.92),
+                width:  0.065,
+                amp:    (arousal * 0.50 + vocal * 0.15) * 0.70 * chorusMult,
+            },
+        ];
 
         for (let b = 0; b < cfg.numBars; b++) {
             const normX = cfg.numBars === 1 ? 0.5 : b / (cfg.numBars - 1);
-            const bassBias = Math.pow(1 - normX, 1.65);
-            const trebleBias = Math.pow(normX, 1.15);
-            const formantDistance = (normX - formantCenter) / formantWidth;
-            const formant = Math.pow(Math.exp(-formantDistance * formantDistance), cfg.peakSharpness);
-            const harmonicDistance = (normX - harmonicCenter) / (formantWidth * 0.72);
-            const harmonic = Math.pow(Math.exp(-harmonicDistance * harmonicDistance), cfg.peakSharpness + 0.45) * (0.24 + arousal * 0.20);
-            const bandShape = this._clamp(formant + harmonic, 0, 1);
-            const shimmer = 0.5 + 0.5 * Math.sin(
-                timeSec * (1.8 + normX * 2.4) + this.bandPhase[b] + chordHash * Math.PI * 2
-            );
-            const ripple = 0.5 + 0.5 * Math.sin(
-                timeSec * (4.2 + arousal * 1.3) - normX * 9.5 + valence * Math.PI * 2
-            );
-            const bandMotion = 1 + cfg.shimmerAmount * (shimmer * 0.7 + ripple * 0.3 - 0.5);
-            const shapedEnergy =
-                globalEnergy * bandShape * bandMotion
-                + beatEnergy * cfg.beatWeight * Math.pow(bassBias, 2.35)
-                + vocal * bandShape * 0.24
-                + arousal * Math.pow(trebleBias, 1.8) * bandShape * 0.08
-                + Math.pow(shimmer, 3.0) * cfg.restLevel;
-            const target = this._clamp(this._softGate(shapedEnergy * cfg.gain, cfg.noiseGate), 0, 1);
+
+            // Sum all peaks — because each is narrow, bars between peaks stay near restLevel
+            let energy = cfg.restLevel;
+            for (const p of peaks) {
+                const dist = (normX - p.center) / p.width;
+                energy += p.amp * Math.exp(-dist * dist * cfg.peakSharpness);
+            }
+
+            // Shimmer multiplies existing energy — animates peaks without raising valleys
+            const shimmer    = 0.5 + 0.5 * Math.sin(timeSec * (1.8 + normX * 2.4) + this.bandPhase[b] + chordHash * Math.PI * 2);
+            const ripple     = 0.5 + 0.5 * Math.sin(timeSec * (4.2 + arousal * 1.3) - normX * 9.5 + valence * Math.PI * 2);
+            energy *= 1 + cfg.shimmerAmount * (shimmer * 0.7 + ripple * 0.3 - 0.5);
+
+            const target = this._clamp(this._softGate(energy * cfg.gain, cfg.noiseGate), 0, 1);
             const alpha  = target > this.levels[b] ? cfg.smoothingUp : cfg.smoothingDown;
             this.levels[b] += (target - this.levels[b]) * alpha;
         }
+
+        // 5-tap spatial blur: rounds off sharp valley edges between peaks.
+        // Peaks are self-reinforcing (neighbors are also elevated), so they stay tall;
+        // valleys get lifted by the spill from adjacent peaks, making transitions gradual.
+        const raw = this._scratch;
+        raw.set(this.levels);
+        for (let b = 0; b < cfg.numBars; b++) {
+            const c  = raw[b];
+            const l1 = b > 0               ? raw[b - 1] : c;
+            const l2 = b > 1               ? raw[b - 2] : l1;
+            const r1 = b < cfg.numBars - 1 ? raw[b + 1] : c;
+            const r2 = b < cfg.numBars - 2 ? raw[b + 2] : r1;
+            this.levels[b] = c * 0.40 + (l1 + r1) * 0.20 + (l2 + r2) * 0.10;
+        }
     }
 
+    // Returns vocal amplitude normalised to [0,1].
+    // Prefers getMaxVocalAmplitude() for exact normalisation; falls back to a slow
+    // peak-follower so the signal stays well-scaled even if the API doesn't expose the max.
     _readVocalLevel(taPlayer, positionMs) {
         if (!taPlayer || typeof taPlayer.getVocalAmplitude !== "function") return 0;
 
@@ -1272,11 +1412,15 @@ class MusicVisualizer {
         if (this._maxVocalAmplitude > 0)
             return this._clamp(raw / this._maxVocalAmplitude, 0, 1);
 
+        // Fast attack (0.08), slow release (0.004) keeps the peak just above the signal
         const peakAlpha = raw > this._vocalPeak ? 0.08 : 0.004;
         this._vocalPeak += (raw - this._vocalPeak) * peakAlpha;
         return this._clamp(raw / Math.max(this._vocalPeak, 0.001), 0, 1);
     }
 
+    // Sharp pulse [0,1] that decays from 1 at each beat onset to 0 by the next beat.
+    // beatSharpness controls the decay curve — higher = more percussive transient spike.
+    // Downbeats (position 0 or 1 within the bar) get a slight amplitude boost.
     _readBeatPulse(taPlayer, positionMs) {
         if (!taPlayer || typeof taPlayer.findBeat !== "function") return 0;
 
@@ -1295,6 +1439,9 @@ class MusicVisualizer {
         }
     }
 
+    // Returns a sustained level [0.5,1] inside a chorus section, 0 otherwise.
+    // A sine envelope on the chorus progress gives a smooth fade-in and fade-out
+    // so the energy boost doesn't snap on/off at the section boundary.
     _readChorusLevel(taPlayer, positionMs) {
         if (!taPlayer || typeof taPlayer.findChorus !== "function") return 0;
 
@@ -1311,6 +1458,9 @@ class MusicVisualizer {
         }
     }
 
+    // Valence (v): −1 = negative/sad → +1 = positive/joyful
+    // Arousal (a): −1 = calm/sleepy  → +1 = energetic/tense
+    // Both axes are remapped from [-1,1] to [0,1] by the caller before use.
     _readValenceArousal(taPlayer, positionMs) {
         if (!taPlayer || typeof taPlayer.getValenceArousal !== "function") return null;
 
@@ -1323,6 +1473,9 @@ class MusicVisualizer {
         }
     }
 
+    // Hashes the current chord name to a stable [0,1] value so the same chord always
+    // produces the same formant/harmonic positions — giving the EQ a consistent spectral
+    // "colour" per chord. Keeps the previous hash when no new chord is detected to avoid jumps.
     _readChordHash(taPlayer, positionMs) {
         if (!taPlayer || typeof taPlayer.findChord !== "function") return this._lastChordHash;
 
@@ -1340,6 +1493,8 @@ class MusicVisualizer {
         return this._lastChordHash;
     }
 
+    // FNV-1a 32-bit hash normalised to [0,1]. Good bit-avalanche for short strings
+    // means chord names that differ by one character map to very different positions.
     _hashUnit(text) {
         let hash = 2166136261;
         for (let i = 0; i < text.length; i++) {
@@ -1353,6 +1508,8 @@ class MusicVisualizer {
         return Math.min(max, Math.max(min, value));
     }
 
+    // Noise gate with a smooth linear ramp: below threshold → 0, above → rescaled to [0,1].
+    // Avoids the hard click of a traditional gate while still hiding idle-state noise.
     _softGate(value, threshold) {
         if (value <= threshold) return 0;
         return (value - threshold) / (1 - threshold);
@@ -1382,9 +1539,9 @@ class MusicVisualizer {
         for (let b = 0; b < cfg.numBars; b++) {
             const barX = startX + b * stepX;
 
-            // Smoothstep pinch: edge bars are shorter, not dimmer — avoids the cropped look
+            // Smoothstep pinch: edge bars are shorter, not dimmer : avoids the cropped look
             // when high-energy frequencies land on the sides.
-            // edgeT must be clamped to [0,1] before the smoothstep — outside that range
+            // edgeT must be clamped to [0,1] before the smoothstep : outside that range
             // t*(t*(3-2*t)) goes negative, making activeSegs negative and all bars invisible.
             const normX      = b / (cfg.numBars - 1);
             const edgeT      = Math.min(1, Math.min(normX, 1 - normX) / cfg.edgeFadeWidth);
@@ -1459,7 +1616,7 @@ class TitleScene extends Phaser.Scene {
         glow.fillStyle(0x999999, 0.07);
         glow.fillCircle(cx, cy - 120, 220);
 
-        // Song title — large, shown during loading (may be empty until TextAlive resolves)
+        // Song title : large, shown during loading (may be empty until TextAlive resolves)
         this.titleText = this.add.text(cx, cy - 120, getSongTitle(), {
             fontFamily: gameSettings.fonts.main,
             fontSize: "72px",
@@ -1485,7 +1642,7 @@ class TitleScene extends Phaser.Scene {
             color: "#777777",
         }).setOrigin(0.5);
 
-        // Play button — invisible until loading finishes
+        // Play button : invisible until loading finishes
         this.playButtonBg = this.add.rectangle(cx, cy + 50, gameSettings.button.width, gameSettings.button.height, gameSettings.colors.primary);
         this.playButtonBg.setAlpha(0);
         this.playButtonText = this.add.text(cx, cy + 50, "PLAY", {
@@ -1692,7 +1849,7 @@ class GameScene extends Phaser.Scene {
         const songTime = taPlayer.timer?.position ?? 0;
         const startX = w + gameSettings.lyrics.startXOffset;
 
-        this.visualizer.update(taPlayer);
+        this.visualizer.update(taPlayer, this.activeChars.length > 0);
 
         this.FLBackground.update(songTime, startX, this.catcher.x, this.fallTime);
         this.catcher.update(deltaSec, h);
@@ -1706,7 +1863,10 @@ class GameScene extends Phaser.Scene {
         const beat = taPlayer.findBeat?.(songTime);
         if (beat && beat.index !== this.lastBeatIndex) {
             this.lastBeatIndex = beat.index;
-            if (!lowPowerMode) this.triggerBeatPinch();
+            if (!lowPowerMode) {
+                this.triggerBeatPinch();
+                this.catcher.triggerBeatBob();
+            }
         }
     }
 
@@ -1766,7 +1926,7 @@ class GameScene extends Phaser.Scene {
             const yPos = this.charSpawnYPointer.y;
             let auraOnSpawn = false;
 
-            const effectiveStartTime = nextChar.startTime + this.lyricsDelay;
+            let effectiveStartTime = nextChar.startTime + this.lyricsDelay;
 
             if (time >= effectiveStartTime - this.fallTime) {
 
@@ -1792,10 +1952,21 @@ class GameScene extends Phaser.Scene {
                 let spawnY = this.charSpawnYPointer.y;
 
                 if (gameSettings.lyrics.trailingChars.includes(textToRender)) {
-                    // Stay on the same row as the previous character regardless of activeChars state
                     spawnY = this.lastSpawnedY ?? spawnY;
+                    // Override effectiveStartTime so the char travels at normal speed (same startX,
+                    // same fallDistance) but arrives one preceding-char-width later than its host,
+                    // keeping a constant spatial gap regardless of unreliable TextAlive timestamps.
+                    const prevAc = this.activeChars[this.activeChars.length - 1];
+                    if (prevAc) {
+                        effectiveStartTime = prevAc.effectiveStartTime
+                            + Math.round(prevAc.obj.width * this.fallTime / this.fallDistance);
+                    }
                 } else if (gameSettings.lyrics.leadingChars.includes(textToRender)) {
-                    spawnX -= this.charSize * gameSettings.lyrics.leadingCharShift;
+                    const nextPending = this.pendingChars[1];
+                    if (nextPending) {
+                        effectiveStartTime = (nextPending.startTime + this.lyricsDelay)
+                            - Math.round(this.charSize * this.fallTime / this.fallDistance);
+                    }
                 }
 
                 const charObj = this.add.text(
@@ -1803,7 +1974,7 @@ class GameScene extends Phaser.Scene {
                     spawnY,
                     textToRender,
                     {
-                        fontFamily: gameSettings.fonts.main,
+                        fontFamily: getLyricFont(textToRender),
                         fontSize: gameSettings.lyrics.fontSize,
                         color: this.getCharColor(nextChar)
                     }
@@ -1812,7 +1983,6 @@ class GameScene extends Phaser.Scene {
                 // For normal characters, shift vertically when they would overlap the previous one.
                 if (
                     !gameSettings.lyrics.trailingChars.includes(textToRender) &&
-                    !gameSettings.lyrics.leadingChars.includes(textToRender) &&
                     this.activeChars.length > 0
                 ) {
                     const prev = this.activeChars[this.activeChars.length - 1];
@@ -1885,7 +2055,7 @@ class GameScene extends Phaser.Scene {
         }
 
         // Slow the catcher while strips drain so the player can't rush to the next character
-        // while the current note is still "playing" — long held notes naturally create pacing gaps.
+        // while the current note is still "playing" : long held notes naturally create pacing gaps.
         this.catcher.changeMaxSpeed(
             this.dyingStrips.length > 0
                 ? gameSettings.catcher.slowedSpeed
@@ -1963,3 +2133,6 @@ taPlayer.addListener({
     onTimerReady() { isTextAliveReady = true; },
 });
 taPlayer.createFromSongUrl(gameSettings.api.songUrl);
+
+
+

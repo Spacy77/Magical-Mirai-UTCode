@@ -1,6 +1,6 @@
 @font-face {
-    font-family: 'EnkaDotMincho24';
-    src: url('../media/font/EnkaDotMincho24.ttf') format('truetype');
+    font-family: 'zpix';
+    src: url('../media/font/zpix.ttf') format('truetype');
     font-weight: normal;
     font-style: normal;
 }
@@ -13,7 +13,7 @@ html, body {
     height: 100%;
     overflow: hidden;
     background-color: #f0f0f0;
-    font-family: 'EnkaDotMincho24', sans-serif;
+    font-family: 'zpix', sans-serif;
 }
 
 /* Container where Phaser mounts the canvas */
@@ -39,7 +39,7 @@ html, body {
     color: #E0E0E0;
     align-items: center;
     justify-content: center;
-    font-family: 'EnkaDotMincho24', sans-serif;
+    font-family: 'zpix', sans-serif;
     text-align: center;
 }
 
