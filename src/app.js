@@ -73,7 +73,7 @@ const gameSettings = {
         height: 250,        // collision / visual height in px
         maxSpeed: 0.8,        // maximum normalized speed (fraction of scene height per second)
         slowedSpeed: 0.01,  // reduced speed while a strip is draining
-        responsiveness: 10.0, // exponential-smoothing factor : higher = snappier tracking
+        responsiveness: 7.0, // exponential-smoothing factor : higher = snappier tracking
         marginY: 80,         // minimum distance the catcher keeps from the top/bottom edges
         animTime: 100,
         beatBobScaleY: 0.85,      // scaleY at peak vertical squeeze on each beat
@@ -214,7 +214,7 @@ const gameSettings = {
     // -- Aura circle ----------------------------------------------------------
     // A soft glowing circle drawn behind characters spawned at wave direction changes.
     backgroundCircle: {
-        radiusMultiplier: 0.50, // circle radius = max(charWidth, charHeight) Ã: this
+        radiusMultiplier: 0.70, // circle radius = max(charWidth, charHeight) Ã: this
         alpha: 0.18,            // opacity of the circle (kept low so it doesn't overpower the character)
         fadeDuration: 300,      // ms over which the circle fades out when the character despawns
     },
@@ -283,6 +283,7 @@ const { Player, PlayerOptions } = TextAliveApp;
 let isTextAliveReady = false;
 let isIntroVideoReady = false;
 let lowPowerMode = false;
+let hardMode = false;
 let introVideoElement = null;
 let introVideoFrame = null;
 
@@ -897,6 +898,9 @@ class ActiveChar {
     startDisintegration(dyingStrips, fallDistance, fallTime) {
         this.destroyVisuals();
 
+        // Duration matches fall velocity: time for the character to travel its own width
+        this.squishDuration = (this.obj.width / fallDistance) * fallTime;
+
         this.dissolveDelay = 0;
         if (this.strip) {
             const stripDuration = (this.strip.width / fallDistance) * fallTime;
@@ -917,8 +921,6 @@ class ActiveChar {
 
     // Called each frame by GameScene.updateDisintegratingChars() while this character dissolves.
     updateDisintegration(catcherX, delta) {
-        const d = gameSettings.disintegration;
-
         // -- Phase 1: hold the character at the catcher while the strip drains --
         if (!this.dissolveStarted) {
             this.obj.x = catcherX + this.obj.width / 2;
@@ -929,21 +931,15 @@ class ActiveChar {
             return false;
         }
 
-        // -- Phase 2: squish the character into the wall, left edge first --
-        // The right edge stays anchored at (catcherX + charWidth) while scaleX shrinks
-        // to zero. This makes the left boundary recede rightward - the left side disappears
-        // first. Alpha fades simultaneously. A slight scaleY bulge adds the squishy feel.
+        // -- Phase 2: left edge stays at catcherX, right edge squishes leftward --
+        // Linear (no easing) so the squish speed matches the character's fall momentum.
         this.dissolveElapsed += delta;
-        const t = Math.min(this.dissolveElapsed / d.dissolveDuration, 1);
+        const t = Math.min(this.dissolveElapsed / this.squishDuration, 1);
 
-        const eased = t * t; // ease-in: clings briefly then snaps away
-        const newScaleX = 1 - eased;
-        const rightAnchor = catcherX + this.obj.width;
-
+        const newScaleX = 1 - t;
         this.obj.scaleX = newScaleX;
-        this.obj.x = rightAnchor - (this.obj.width * newScaleX) / 2;
-        this.obj.alpha = 1 - eased;
-        this.obj.scaleY = 1 + 0.25 * Math.sin(Math.PI * t); // bulge peaks at t=0.5
+        this.obj.x = catcherX + (this.obj.width * newScaleX) / 2;
+        this.obj.scaleY = 1 + 0.25 * Math.sin(Math.PI * t);
 
         if (t >= 1) {
             this.obj.destroy();
@@ -1797,7 +1793,9 @@ class TitleScene extends Phaser.Scene {
         });
         this.playButtonBg.on('pointerdown', () => this.startIntro());
 
-        // Low Power toggle (bottom-right, touch-friendly)
+        // Hard Mode toggle 
+        this._buildHardModeToggle();
+        // Low Power toggle
         this._buildLowPowerToggle();
     }
 
@@ -1813,6 +1811,39 @@ class TitleScene extends Phaser.Scene {
             });
         }
         this.starGraphics = this.add.graphics();
+    }
+
+    _buildHardModeToggle() {
+        const padX = 14, padY = 14;
+        const btnW = 152, btnH = 38;
+        const descH = 28;
+        const bx = this.scale.width - padX - btnW / 2;
+        // Sit above the low-power widget (which occupies descH + 4 + btnH above the bottom padding)
+        const lpWidgetH = descH + 4 + btnH;
+        const by = this.scale.height - padY - btnH / 2 - lpWidgetH - 8;
+
+        this.add.text(bx, by - btnH / 2 - descH / 2 - 4, 'Disables click helper', {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "12px",
+            color: "#555555",
+        }).setOrigin(0.5);
+
+        this.hmBg = this.add.rectangle(bx, by, btnW, btnH, 0x1e1e1e).setAlpha(0.9);
+        this.hmBg.setStrokeStyle(1, 0x444444);
+        this.hmText = this.add.text(bx, by, 'Hard Mode', {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "16px",
+            color: "#777777",
+        }).setOrigin(0.5);
+        this.hmBg.setInteractive({ useHandCursor: true });
+        this.hmBg.on('pointerdown', () => this._toggleHardMode());
+    }
+
+    _toggleHardMode() {
+        hardMode = !hardMode;
+        this.hmText.setText(hardMode ? 'Hard Mode: ON' : 'Hard Mode');
+        this.hmText.setColor(hardMode ? '#8A2BE2' : '#777777');
+        this.hmBg.fillColor = hardMode ? 0x2a1060 : 0x1e1e1e;
     }
 
     _buildLowPowerToggle() {
@@ -2080,7 +2111,7 @@ class GameScene extends Phaser.Scene {
                 // check if wavestate changed direction
                 if (this.waveState.advance(time)) {
                     this.charSpawnYPointer.flipDirection();
-                    auraOnSpawn = true;
+                    auraOnSpawn = !hardMode;
                 }
 
                 let textToRender = nextChar.text;
