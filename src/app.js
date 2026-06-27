@@ -1,4 +1,4 @@
-﻿const gameSettings = {
+const gameSettings = {
     // -- TextAlive API --------------------------------------------------------
     api: {
         token: "1O5BTRwWsXT6TfAP",
@@ -48,13 +48,12 @@
 
     // Base colors assigned to successive phrases (cycled if there are more phrases than entries)
     phraseColors: [
-        "#FFFFFF", 
-        "#7DD3FC", 
-        "#A7F3D0", 
-        "#FDE68A", 
-        "#F9A8D4", 
-        "#C4B5FD", 
-        "#FDBA74", 
+        "#7DD3FC",
+        "#A7F3D0",
+        "#86cecb",
+        "#137a7f",
+        "#e12885",
+        "#bec8d1",
     ],
 
     // -- Fonts ----------------------------------------------------------------
@@ -84,7 +83,7 @@
         responsiveness: 7.0, // exponential-smoothing factor : higher = snappier tracking
         marginY: 80,         // minimum distance the catcher keeps from the top/bottom edges
         animTime: 100,
-        beatBobScaleY: 0.80,      // scaleY at peak vertical squeeze on each beat
+        beatBobScaleY: 0.85,      // scaleY at peak vertical squeeze on each beat
         beatBobDuration: 80,      // ms to reach peak (same back, yoyo)
         beatBobEase: 'Quad.easeOut',
     },
@@ -133,8 +132,11 @@
         maxDurationBGEffect: 200,   // max time (ms) the effect stays fully visible
         maxDurationBGAnim: 100,     // max time (ms) of the scale-in animation
         sizeChangeCoeff: 5,         // how aggressively the size pulses during the animation
-        colors: ["#D00000", "#FFB703", "#2A9D8F", "#3A86FF", "#8338EC"],  // palette cycled per catch
-        startAlpha: 0.5             // initial opacity of the background character
+        boringColors: ["#274c5e", "#3a7d7a", "#7fb8aa", "#d9efe7", "#fdfaf4"],
+        mildColors: ["#6d3fa9", "#a37ad9", "#2e7d5b", "#7ecf9a", "#e12885", "#137a7f"],
+        excitingColors: ["#ff9835", "#faa668", "#f52019", "#ff533a", "#ff7254"],
+        startAlpha: 0.5,             // initial opacity of the background character
+        arousalThresholds: [0.335, 0.37],
     },
 
     // -- Combo counter HUD (bottom-left) --------------------------------------
@@ -167,14 +169,23 @@
 
     // -- FL Studio-style timeline background ----------------------------------
     FLBackground: {
-        bgColor: 0x434b55,        // main panel background
-        topBarColor: 0x2f353c,    // darker strip along the top (ruler area)
-        majorLineColor: 0x252a30, // beat / bar divider lines
-        minorLineColor: 0x39414a, // subdivision lines between beats
+        bgColor: 0x111111,        // main panel background
+        topBarColor: 0x111111,    // darker strip along the top (ruler area)
+        majorLineColor: 0x111111, // beat / bar divider lines
+        minorLineColor: 0x111111, // subdivision lines between beats
         textColor: "#d4d8dc",     // measure-number label color
-        topBarHeight: 36,         // height (px) of the ruler strip
-        majorSpacing: 250,        // horizontal pixels between major (bar) lines
+        fontSize: "26px",
+        topBarHeight: 50,         // height (px) of the ruler strip
+        majorSpacing: 400,        // horizontal pixels between major (bar) lines
         subdivisions: 4,          // how many minor lines to draw between each major line
+        cellPaddingX: 10,         // horizontal inset for each colored cell
+        cellAlpha: 0.24,          // opacity of the colored cells
+        cellPalette: ["#7E57C2", "#673AB7", "#512DA8", "#311B92"],
+        cellColorMode: "random",   // "cycle" or "random"
+        colorAnimationEnabled: true,
+        colorAnimationSpeed: 0.9,
+        colorAnimationAmplitude: 50,
+        colorAnimationPhaseOffset: 0.85,
     },
 
     // -- Heart mode -----------------------------------------------------------
@@ -988,15 +999,18 @@ class ActiveChar {
 }
 
 class FLTimelineBackground extends Phaser.GameObjects.Container {
-
     constructor(scene, width, height) {
         super(scene, 0, 0);
 
         this.width = width;
         this.height = height;
         this.topBarHeight = gameSettings.FLBackground.topBarHeight;
+        this.colorAnimationEnabled = gameSettings.FLBackground.colorAnimationEnabled;
 
         this.scrollX = 0;
+        this._lastDrawTime = 0;
+        this.cellColorAssignments = new Map();
+        this.cellColorCursor = 0;
 
         this.graphics = scene.add.graphics();
         // Pool of measure-number text objects : reused every frame to avoid GC churn
@@ -1006,7 +1020,96 @@ class FLTimelineBackground extends Phaser.GameObjects.Container {
 
         scene.add.existing(this);
 
-        this.redraw();
+        this.redraw(0);
+    }
+
+    setColorAnimationEnabled(enabled) {
+        this.colorAnimationEnabled = enabled;
+        this.redraw(this._lastDrawTime);
+    }
+
+    _hexToHsl(hex) {
+        let value = hex.replace("#", "");
+        if (value.length === 3) {
+            value = value.split("").map(ch => ch + ch).join("");
+        }
+
+        const r = parseInt(value.slice(0, 2), 16) / 255;
+        const g = parseInt(value.slice(2, 4), 16) / 255;
+        const b = parseInt(value.slice(4, 6), 16) / 255;
+
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const l = (max + min) / 2;
+
+        if (max === min) {
+            return { h: 0, s: 0, l };
+        }
+
+        const d = max - min;
+        const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        let h = 0;
+
+        switch (max) {
+            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+            case g: h = (b - r) / d + 2; break;
+            case b: h = (r - g) / d + 4; break;
+        }
+
+        h /= 6;
+        return { h: h * 360, s, l };
+    }
+
+    _hslToHex(h, s, l) {
+        const hueToRgb = (p, q, t) => {
+            let tt = t;
+            if (tt < 0) tt += 1;
+            if (tt > 1) tt -= 1;
+            if (tt < 1 / 6) return p + (q - p) * 6 * tt;
+            if (tt < 1 / 2) return q;
+            if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
+            return p;
+        };
+
+        if (s === 0) {
+            const gray = Math.round(l * 255);
+            return `#${gray.toString(16).padStart(2, "0")}${gray.toString(16).padStart(2, "0")}${gray.toString(16).padStart(2, "0")}`;
+        }
+
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        const hh = ((h % 360) + 360) % 360 / 360;
+        const r = Math.round(hueToRgb(p, q, hh + 1 / 3) * 255);
+        const g = Math.round(hueToRgb(p, q, hh) * 255);
+        const b = Math.round(hueToRgb(p, q, hh - 1 / 3) * 255);
+
+        return `#${[r, g, b].map(v => v.toString(16).padStart(2, "0")).join("")}`;
+    }
+
+    _getCellColor(logicalKey, timeMs) {
+        // We use HSL for cleaner tint animation
+
+        const cfg = gameSettings.FLBackground;
+        const palette = cfg.cellPalette || [];
+        let baseHex = this.cellColorAssignments.get(logicalKey);
+
+        if (!baseHex) {
+            baseHex = palette[Math.floor(Math.random() * palette.length)] || cfg.majorLineColor;
+            this.cellColorAssignments.set(logicalKey, baseHex);
+        }
+
+        if (!this.colorAnimationEnabled || !cfg.colorAnimationEnabled) {
+            return baseHex;
+        }
+
+        const { h, s, l } = this._hexToHsl(baseHex);
+        const lightnessShift = Math.sin(
+            (timeMs / 1000) * cfg.colorAnimationSpeed +
+            logicalKey * cfg.colorAnimationPhaseOffset
+        ) * (cfg.colorAnimationAmplitude / 200);
+        const targetL = Math.max(0.2, Math.min(0.85, l + lightnessShift));
+
+        return this._hslToHex(h, s, targetL);
     }
 
     // Returns an existing pooled label or creates a new one if the pool is exhausted
@@ -1014,7 +1117,7 @@ class FLTimelineBackground extends Phaser.GameObjects.Container {
         if (index >= this._labelPool.length) {
             const lbl = this.scene.add.text(0, 8, '', {
                 fontFamily: gameSettings.fonts.ui,
-                fontSize: "16px",
+                fontSize: gameSettings.FLBackground.fontSize,
                 color: gameSettings.FLBackground.textColor
             });
             this._labelPool.push(lbl);
@@ -1026,11 +1129,13 @@ class FLTimelineBackground extends Phaser.GameObjects.Container {
     update(songTime, startX, catcherX, fallTime) {
         const pixelsPerMs = (startX - catcherX) / fallTime;
         this.scrollX = songTime * pixelsPerMs;
-        this.redraw();
+        this._lastDrawTime = songTime;
+        this.redraw(songTime);
     }
 
-    redraw() {
+    redraw(timeMs = 0) {
         const g = this.graphics;
+        const cfg = gameSettings.FLBackground;
 
         g.clear();
 
@@ -1038,14 +1143,18 @@ class FLTimelineBackground extends Phaser.GameObjects.Container {
         g.fillStyle(gameSettings.FLBackground.bgColor);
         g.fillRect(0, 0, this.width, this.height);
 
-        const majorSpacing = gameSettings.FLBackground.majorSpacing;
-        const minorSpacing = majorSpacing / gameSettings.FLBackground.subdivisions;
+        const majorSpacing = cfg.majorSpacing;
+        const minorSpacing = majorSpacing / cfg.subdivisions;
+        const cellPaddingX = cfg.cellPaddingX || 0;
+        const cellWidth = majorSpacing - cellPaddingX * 2;
+        const cellHeight = this.height - this.topBarHeight - 2;
+        const cellY = this.topBarHeight + 1;
 
         // Align grid so it loops infinitely
         const offset = this.scrollX % majorSpacing;
 
         // Minor grid lines
-        g.lineStyle(1, gameSettings.FLBackground.minorLineColor, 1);
+        g.lineStyle(1, cfg.minorLineColor, 1);
         for (let x = -offset; x < this.width + majorSpacing; x += minorSpacing) {
             g.beginPath();
             g.moveTo(x, this.topBarHeight);
@@ -1054,13 +1163,25 @@ class FLTimelineBackground extends Phaser.GameObjects.Container {
         }
 
         // Major grid lines + measure labels
-        g.lineStyle(2, gameSettings.FLBackground.majorLineColor, 1);
+        g.lineStyle(2, cfg.majorLineColor, 1);
 
         const firstMeasure = Math.floor(this.scrollX / majorSpacing);
         let measure = firstMeasure + 1;
         let labelIndex = 0;
+        const totalCells = Math.ceil((this.width + majorSpacing) / majorSpacing) + 2;
 
-        for (let x = -offset; x < this.width + majorSpacing; x += majorSpacing) {
+        // Add colors for every cell
+        for (let i = 0; i < totalCells; i++) {
+            const x = -offset + i * majorSpacing;
+            const cellX = x + cellPaddingX;
+            const logicalKey = measure;
+            const color = this._getCellColor(logicalKey, timeMs);
+
+            if (cellX + cellWidth >= 0 && cellX <= this.width) {
+                g.fillStyle(parseInt(color.replace("#", ""), 16), cfg.cellAlpha);
+                g.fillRect(cellX, cellY, cellWidth, cellHeight);
+            }
+
             g.beginPath();
             g.moveTo(x, 0);
             g.lineTo(x, this.height);
@@ -1077,7 +1198,7 @@ class FLTimelineBackground extends Phaser.GameObjects.Container {
         }
 
         // Top ruler bar (drawn over the grid so labels sit on top of it)
-        g.fillStyle(gameSettings.FLBackground.topBarColor);
+        g.fillStyle(cfg.topBarColor);
         g.fillRect(0, 0, this.width, this.topBarHeight);
 
         // Bottom border of ruler bar
@@ -1098,8 +1219,7 @@ class FLTimelineBackground extends Phaser.GameObjects.Container {
 }
 
 class BackgroundChar {
-
-    constructor(scene) {
+    constructor(scene, taPlayer) {
         this.scene = scene;
 
         this.startTime = 0;
@@ -1113,7 +1233,8 @@ class BackgroundChar {
             {
                 fontFamily: gameSettings.fonts.bgChar,
                 fontSize: gameSettings.backgroundLyrics.fontSize,
-                color: gameSettings.backgroundLyrics.colors[0]
+                color: 0x000000,
+                fontStyle: "bold"
             }
         )
             .setOrigin(0.5)
@@ -1137,6 +1258,8 @@ class BackgroundChar {
             .setDepth(-1);
 
         this.hearts = [];
+
+        this.taPlayer = taPlayer;
     }
 
     isHeart(text) {
@@ -1202,6 +1325,19 @@ class BackgroundChar {
         this.hearts.length = 0;
     }
 
+    giveColorPalette(){
+        const arousal = this.taPlayer.getValenceArousal(this.taPlayer.timer.position).a;
+        if (arousal < gameSettings.backgroundLyrics.arousalThresholds[0]){
+            return gameSettings.backgroundLyrics.boringColors;
+        }
+        else if (arousal < gameSettings.backgroundLyrics.arousalThresholds[1]){
+            return gameSettings.backgroundLyrics.mildColors;
+        }
+        else{
+            return gameSettings.backgroundLyrics.excitingColors;
+        }
+    }
+
     show(charText, duration, currentTime) {
         this.startTime = currentTime;
         this.endTime = currentTime + duration;
@@ -1216,8 +1352,9 @@ class BackgroundChar {
         this.text.setText(charText);
         this.text.setAlpha(gameSettings.backgroundLyrics.startAlpha);
 
-        const color = gameSettings.backgroundLyrics.colors[
-            Math.floor(Math.random() * gameSettings.backgroundLyrics.colors.length)
+        const colors = this.giveColorPalette();
+        const color = colors[
+            Math.floor(Math.random() * colors.length)
         ];
         this.text.setColor(color);
 
@@ -1894,7 +2031,7 @@ class GameScene extends Phaser.Scene {
         this.charSize = parseInt(gameSettings.lyrics.fontSize);
         this.lastSpawnedY = null;
 
-        this.backgroundChar = new BackgroundChar(this);
+        this.backgroundChar = new BackgroundChar(this, taPlayer);
         this.time.addEvent({ delay: 500, callback: () => this.backgroundChar.clear() });
 
         this.charSpawnYPointer = new CharSpawnYPointer(
