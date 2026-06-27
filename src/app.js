@@ -14,6 +14,13 @@
         objectPosition: "center center",
     },
 
+    endScreen: {
+        creditsVideo: "media/credits_ending.mp4",  // placeholder — replace with real asset
+        fadeOutDurationMs: 1200,   // game → black
+        fadeInDurationMs: 1000,    // black → end screen
+        starCount: 70,
+    },
+
     // -- Global palette -------------------------------------------------------
     colors: {
         background: "#111111",   // scene background fill
@@ -275,10 +282,11 @@ let lowPowerMode = false;
 let hardMode = false;
 let introVideoElement = null;
 let introVideoFrame = null;
+let endScreenVideoElement = null;
 
 function getSongTitle() {
     const song = taPlayer?.data?.song;
-    return song?.name || song?.songName || song?.title || "Loading Song ...";
+    return song?.name || song?.songName || song?.title || "Loading Song ... / 読み込み中...";
 }
 
 function createIntroVideoElement() {
@@ -404,6 +412,47 @@ function playIntroVideo(onComplete, onPlaybackBlocked, onFadeStart) {
     if (playPromise?.catch) {
         playPromise.catch(abort);
     }
+}
+
+function createEndScreenVideoElement() {
+    const url = gameSettings.endScreen.creditsVideo;
+    const video = document.createElement("video");
+    video.preload = "auto";
+    video.playsInline = true;
+    video.controls = false;
+    video.loop = false;
+    video.muted = true;
+
+    // Portrait layout: centered in the right half of the screen
+    video.style.position = "fixed";
+    video.style.top = "5vh";
+    video.style.height = "90vh";
+    video.style.width = "auto";
+    video.style.maxWidth = "43vw";
+    video.style.left = "75vw";
+    video.style.transform = "translateX(-50%)";
+    video.style.objectFit = "contain";
+    video.style.background = "#000000";
+    video.style.pointerEvents = "none";
+    video.style.zIndex = "5";
+    video.style.display = "none";
+    video.style.opacity = "0";
+
+    video.src = url;
+    document.body.appendChild(video);
+    video.load();
+
+    endScreenVideoElement = video;
+    return video;
+}
+
+function showEndScreenVideo() {
+    const video = endScreenVideoElement;
+    if (!video) return;
+    video.style.display = "block";
+    video.style.opacity = "1";
+    video.play().catch(() => {});
+    // No 'ended' listener — video freezes on last frame naturally when loop=false
 }
 
 // Font glyph detection
@@ -1632,7 +1681,7 @@ class TitleScene extends Phaser.Scene {
         this.spinner.strokePath();
 
         // Loading label below spinner
-        this.loadingLabel = this.add.text(cx, cy + 120, "Loading...", {
+        this.loadingLabel = this.add.text(cx, cy + 120, "Loading... / 読み込み中...", {
             fontFamily: gameSettings.fonts.ui,
             fontSize: "20px",
             color: "#777777",
@@ -1646,6 +1695,11 @@ class TitleScene extends Phaser.Scene {
             fontSize: gameSettings.button.fontSize,
             color: gameSettings.colors.textLight,
             fontStyle: "bold"
+        }).setOrigin(0.5).setAlpha(0);
+        this.playButtonCaption = this.add.text(cx, cy + 50 + gameSettings.button.height / 2 + 12, 'スタート', {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "16px",
+            color: "#AAAAAA",
         }).setOrigin(0.5).setAlpha(0);
 
         this.playButtonBg.on('pointerover', () => {
@@ -1685,7 +1739,7 @@ class TitleScene extends Phaser.Scene {
         const lpWidgetH = descH + 4 + btnH;
         const by = this.scale.height - padY - btnH / 2 - lpWidgetH - 8;
 
-        this.add.text(bx, by - btnH / 2 - descH / 2 - 4, 'Disables click helper', {
+        this.add.text(bx, by - btnH / 2 - descH / 2 - 4, 'ハードモード  Disables click helper', {
             fontFamily: gameSettings.fonts.ui,
             fontSize: "12px",
             color: "#555555",
@@ -1717,7 +1771,7 @@ class TitleScene extends Phaser.Scene {
         const by = this.scale.height - padY - btnH / 2;
 
         // Description label above the button
-        this.add.text(bx, by - btnH / 2 - descH / 2 - 4, 'Disables all particle effects', {
+        this.add.text(bx, by - btnH / 2 - descH / 2 - 4, '省電力モード  Disables all particle effects', {
             fontFamily: gameSettings.fonts.ui,
             fontSize: "12px",
             color: "#555555",
@@ -1765,7 +1819,7 @@ class TitleScene extends Phaser.Scene {
         this.titleText.setText(getSongTitle());
         this.tweens.add({ targets: [this.spinner, this.loadingLabel], alpha: 0, duration: 500 });
         this.tweens.add({
-            targets: [this.playButtonBg, this.playButtonText],
+            targets: [this.playButtonBg, this.playButtonText, this.playButtonCaption],
             alpha: 1,
             duration: 600,
             delay: 200,
@@ -1814,6 +1868,8 @@ class GameScene extends Phaser.Scene {
         this.fallTimeMultiplier = gameSettings.lyrics.fallTimeMsMultiplier;
         this.fallTime = gameSettings.lyrics.fallTimeMs * this.fallTimeMultiplier;
         this.destroyThreshold = gameSettings.lyrics.destroyOverflowRatio;
+        this.songStarted = false;
+        this.songEndTriggered = false;
 
         this.catcher = new Catcher(this, this.scale.height / 2);
         this.waveState = new WaveState();
@@ -1876,7 +1932,19 @@ class GameScene extends Phaser.Scene {
         const w = this.scale.width;
         const h = this.scale.height;
 
-        if (!taPlayer || !taPlayer.isPlaying) return;
+        if (!taPlayer) return;
+
+        if (taPlayer.isPlaying) {
+            this.songStarted = true;
+        } else {
+            // Song stopped after it had been playing → natural end
+            if (this.songStarted && !this.songEndTriggered) {
+                this.songEndTriggered = true;
+                this.startSongEndSequence();
+            }
+            return;
+        }
+
         const songTime = taPlayer.timer?.position ?? 0;
         const startX = w + gameSettings.lyrics.startXOffset;
 
@@ -2127,6 +2195,28 @@ class GameScene extends Phaser.Scene {
         this.catcher.playKnockAnim();
     }
 
+    startSongEndSequence() {
+        // Disable player input during fade-out
+        this.input.keyboard.enabled = false;
+        this.input.enabled = false;
+
+        const w = this.scale.width;
+        const h = this.scale.height;
+        const overlay = this.add.rectangle(w / 2, h / 2, w, h, 0x000000)
+            .setAlpha(0).setDepth(99999);
+
+        this.tweens.add({
+            targets: overlay,
+            alpha: 1,
+            duration: gameSettings.endScreen.fadeOutDurationMs,
+            ease: 'Quad.easeIn',
+            onComplete: () => {
+                this.scene.launch('EndScene');
+                this.scene.stop();
+            },
+        });
+    }
+
     loadLyrics(firstChar) {
         this.pendingChars = [];
         let char = firstChar;
@@ -2140,10 +2230,110 @@ class GameScene extends Phaser.Scene {
 
 }
 
+class EndScene extends Phaser.Scene {
+    constructor() { super("EndScene"); }
+
+    create() {
+        const w = this.scale.width;
+        const h = this.scale.height;
+
+        // Solid black background
+        this.add.rectangle(w / 2, h / 2, w, h, 0x000000);
+
+        // Twinkling star field
+        this._buildStars(gameSettings.endScreen.starCount, w, h);
+
+        // Vertical divider between credits and video panels
+        const divider = this.add.graphics();
+        divider.lineStyle(1, 0x333333, 1);
+        divider.lineBetween(w / 2, h * 0.05, w / 2, h * 0.95);
+
+        // Credits panel (left half)
+        this._buildCredits(w, h);
+
+        // Show the portrait video on the right half
+        showEndScreenVideo();
+
+        // Fade in from black
+        const overlay = this.add.rectangle(w / 2, h / 2, w, h, 0x000000)
+            .setAlpha(1).setDepth(99999);
+        this.tweens.add({
+            targets: overlay,
+            alpha: 0,
+            duration: gameSettings.endScreen.fadeInDurationMs,
+            ease: 'Quad.easeOut',
+            onComplete: () => overlay.destroy(),
+        });
+    }
+
+    _buildStars(count, w, h) {
+        this.starData = [];
+        for (let i = 0; i < count; i++) {
+            this.starData.push({
+                x: Math.random() * w,
+                y: Math.random() * h,
+                r: 1 + Math.random() * 2,
+                phase: Math.random() * Math.PI * 2,
+                speed: 0.0008 + Math.random() * 0.0015,
+            });
+        }
+        this.starGraphics = this.add.graphics();
+    }
+
+    _buildCredits(w, h) {
+        const cx = w / 4;
+
+        this.add.text(cx, h * 0.12, 'Credits', {
+            fontFamily: gameSettings.fonts.main,
+            fontSize: "52px",
+            color: gameSettings.colors.textLight,
+            fontStyle: "bold",
+            stroke: "#000000",
+            strokeThickness: 6,
+        }).setOrigin(0.5);
+
+        const lines = [
+            'アニメーション / Animations',
+            '─────────────────',
+            'LeLad (intro animation)',
+            'Galaxy77 (pixel art)',
+            'プログラム / Programming',
+            '─────────────────',
+            'PouchyCorp',
+            'Alixz',
+            'Spacy',
+            '─────────────────',
+            'Thank you for playing !',
+        ];
+
+        this.add.text(cx, h * 0.25, lines.join('\n'), {
+            fontFamily: gameSettings.fonts.main,
+            fontSize: "20px",
+            color: "#BBBBBB",
+            align: "center",
+            lineSpacing: 8,
+            stroke: "#000000",
+            strokeThickness: 3,
+        }).setOrigin(0.5, 0);
+    }
+
+    update(time) {
+        if (!lowPowerMode && this.starGraphics && this.starData) {
+            this.starGraphics.clear();
+            for (const s of this.starData) {
+                const alpha = 0.15 + 0.75 * (0.5 + 0.5 * Math.sin(s.phase + time * s.speed));
+                this.starGraphics.fillStyle(0xffffff, alpha);
+                this.starGraphics.fillCircle(s.x, s.y, s.r);
+            }
+        }
+    }
+}
+
 document.body.style.backgroundColor = gameSettings.colors.background;
 document.body.style.margin = "0";
 document.body.style.overflow = "hidden";
 introVideoElement = createIntroVideoElement();
+createEndScreenVideoElement();
 
 const config = {
     type: Phaser.AUTO,
@@ -2152,7 +2342,7 @@ const config = {
     height: window.innerHeight,
     transparent: true,
     physics: { default: "arcade" },
-    scene: [BootScene, TitleScene, GameScene],
+    scene: [BootScene, TitleScene, GameScene, EndScene],
     scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH }
 };
 
