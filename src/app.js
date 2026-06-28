@@ -46,14 +46,11 @@ const gameSettings = {
     ],
 
     // Base colors assigned to successive phrases (cycled if there are more phrases than entries)
-    phraseColors: [
-        "#7DD3FC",
-        "#A7F3D0",
-        "#81fdaa",
-        "#4ff1fa",
-        "#ff67b3",
-        "#f5f7f8",
-    ],
+    phraseColors: {
+        boringColors: ["#59a6cc", "#4fb4af", "#7ec4b2", "#d9efe7", "#fdfaf4"],
+        mildColors: ["#8f57d8", "#b485f1", "#44bd89", "#7ecf9a", "#ec2c8c", "#137a7f"],
+        excitingColors: ["#ff9835", "#faa668", "#f52019", "#ff533a", "#ff7254"]
+    },
 
     // -- Fonts ----------------------------------------------------------------
     fonts: {
@@ -121,13 +118,14 @@ const gameSettings = {
             "「", "『", "（", "［", "【", "〈", "《"
         ],
 
-        lyricsDelay: 250
+        lyricsDelay: 300,
+        arousalThresholds: [0.335, 0.36]
     },
 
     // -- Background large-character flash effect -------------------------------
     // When a character is caught, a giant version of it briefly appears behind the scene.
     backgroundLyrics: {
-        fontSize: "700px",          // size of the background character
+        fontSize: "600px",          // size of the background character
         maxDurationBGEffect: 200,   // max time (ms) the effect stays fully visible
         maxDurationBGAnim: 100,     // max time (ms) of the scale-in animation
         sizeChangeCoeff: 5,         // how aggressively the size pulses during the animation
@@ -135,7 +133,7 @@ const gameSettings = {
         mildColors: ["#8f57d8", "#b485f1", "#44bd89", "#7ecf9a", "#ec2c8c", "#137a7f"],
         excitingColors: ["#ff9835", "#faa668", "#f52019", "#ff533a", "#ff7254"],
         startAlpha: 0.5,             // initial opacity of the background character
-        arousalThresholds: [0.335, 0.37],
+        arousalThresholds: [0.335, 0.36],
     },
 
     // -- Combo counter HUD (bottom-left) --------------------------------------
@@ -491,6 +489,7 @@ class ComboCounter {
         this.comboPoints = 0;
         this.hits = 0;
         this.misses = 0;
+        this.bestCombo = 0;
 
         const cfg = gameSettings.combo;
         const x        = cfg.xOffset;
@@ -546,6 +545,10 @@ class ComboCounter {
     }
 
     miss() {
+        if (this.combo > this.bestCombo){
+            this.bestCombo = this.combo;
+        }
+
         this.misses++;
         this.combo = 0;
         this.comboPoints = 0;
@@ -581,6 +584,14 @@ class ComboCounter {
         if (combo < 1)  return 0;
         if (combo < 20) return Math.floor(0.16 * combo ** 2 - 0.33 * combo + 1.16);
         return 3 * combo;
+    }
+
+    getStats() {
+        return {
+            hits: this.hits,
+            misses: this.misses,
+            bestCombo: this.bestCombo
+        };
     }
 }
 
@@ -926,7 +937,6 @@ class ActiveChar {
     updateDisintegration(catcherX, delta) {
         // -- Phase 1: hold the character at the catcher while the strip drains --
         if (!this.dissolveStarted) {
-            this.obj.x = catcherX + this.obj.width / 2;
             this.dissolveWait += delta;
             if (this.dissolveWait >= this.dissolveDelay) {
                 this.dissolveStarted = true;
@@ -1955,6 +1965,9 @@ class GameScene extends Phaser.Scene {
         this.backgroundChar = new BackgroundChar(this, taPlayer);
         this.time.addEvent({ delay: 500, callback: () => this.backgroundChar.clear() });
 
+        this.songStarted = false;
+        this.songEndTriggered = false;
+
         this.charSpawnYPointer = new CharSpawnYPointer(
             this.scale.height / 2
         );
@@ -2043,6 +2056,19 @@ class GameScene extends Phaser.Scene {
         }
     }
 
+    giveColorPalette(){
+        const arousal = taPlayer.getValenceArousal(taPlayer.timer.position).a;
+        if (arousal < gameSettings.lyrics.arousalThresholds[0]){
+            return gameSettings.phraseColors.boringColors;
+        }
+        else if (arousal < gameSettings.lyrics.arousalThresholds[1]){
+            return gameSettings.phraseColors.mildColors;
+        }
+        else{
+            return gameSettings.phraseColors.excitingColors;
+        }
+    }
+
     getCharColor(char) {
         // Phrase sets the base color; word index within the phrase picks a brightness tint,
         // so characters within the same phrase stay recognizably similar but are still distinguishable.
@@ -2055,14 +2081,12 @@ class GameScene extends Phaser.Scene {
 
         const phraseIndex = taPlayer.video.phrases.indexOf(phrase);
 
-        const phraseColor =
-            gameSettings.phraseColors[phraseIndex % gameSettings.phraseColors.length];
+        const phraseColorPalette = this.giveColorPalette();
+        const phraseColor = phraseColorPalette[phraseIndex % phraseColorPalette.length];
 
         const wordIndex = phrase.children.indexOf(word);
 
-
-        const tint =
-            gameSettings.tintCycle[wordIndex % gameSettings.tintCycle.length];
+        const tint = gameSettings.tintCycle[wordIndex % gameSettings.tintCycle.length];
 
         return tintColor(phraseColor, tint);
     }
@@ -2201,16 +2225,9 @@ class GameScene extends Phaser.Scene {
                 // obj is null when the character was caught (disintegration owns its lifecycle)
                 if (item.obj) item.obj.destroy();
                 this.dyingStrips.splice(i, 1);
+                this.catcher.changeMaxSpeed(gameSettings.catcher.maxSpeed);
             }
         }
-
-        // Slow the catcher while strips drain so the player can't rush to the next character
-        // while the current note is still "playing" : long held notes naturally create pacing gaps.
-        this.catcher.changeMaxSpeed(
-            this.dyingStrips.length > 0
-                ? gameSettings.catcher.slowedSpeed
-                : gameSettings.catcher.maxSpeed
-        );
     }
 
     updateActiveChars(time, startX, delta) {
@@ -2231,6 +2248,10 @@ class GameScene extends Phaser.Scene {
         const char = this.activeChars[idx];
         this.activeChars.splice(idx, 1);
 
+        if (char.strip != null){
+            this.catcher.changeMaxSpeed(gameSettings.catcher.slowedSpeed);
+        }
+
         char.spawnCatchParticles();
 
         // Hand the character off to the disintegration path:
@@ -2247,6 +2268,8 @@ class GameScene extends Phaser.Scene {
     }
 
     startSongEndSequence() {
+        this.comboCounter.miss();
+
         // Disable player input during fade-out
         this.input.keyboard.enabled = false;
         this.input.enabled = false;
@@ -2262,7 +2285,33 @@ class GameScene extends Phaser.Scene {
             duration: gameSettings.endScreen.fadeOutDurationMs,
             ease: 'Quad.easeIn',
             onComplete: () => {
-                this.scene.launch('EndScene');
+                const stats = this.comboCounter.getStats();
+                this.scene.start("EndScene", { comboStats: stats });
+                this.scene.stop();
+            },
+        });
+    }
+
+    startSongEndSequence() {
+        this.comboCounter.miss();
+
+        // Disable player input during fade-out
+        this.input.keyboard.enabled = false;
+        this.input.enabled = false;
+
+        const w = this.scale.width;
+        const h = this.scale.height;
+        const overlay = this.add.rectangle(w / 2, h / 2, w, h, 0x000000)
+            .setAlpha(0).setDepth(99999);
+
+        this.tweens.add({
+            targets: overlay,
+            alpha: 1,
+            duration: gameSettings.endScreen.fadeOutDurationMs,
+            ease: 'Quad.easeIn',
+            onComplete: () => {
+                const stats = this.comboCounter.getStats();
+                this.scene.start("EndScene", { comboStats: stats });
                 this.scene.stop();
             },
         });
@@ -2277,12 +2326,14 @@ class GameScene extends Phaser.Scene {
         }
         this.pendingChars.sort((a, b) => a.startTime - b.startTime);
     }
-
-
 }
 
 class EndScene extends Phaser.Scene {
     constructor() { super("EndScene"); }
+
+    init(data) {
+        this.comboStats = data?.comboStats ?? { hits: 0, misses: 0, bestCombo: 0 };
+    }
 
     create() {
         const w = this.scale.width;
@@ -2335,6 +2386,9 @@ class EndScene extends Phaser.Scene {
             strokeThickness: 6,
         }).setOrigin(0.5);
 
+        const { hits, misses, bestCombo } = this.comboStats;
+        const accuracy = hits + misses > 0 ? (hits / (hits + misses)) * 100 : 0;
+
         const lines = [
             'アニメーション / Animations',
             '─────────────────',
@@ -2345,6 +2399,9 @@ class EndScene extends Phaser.Scene {
             'PouchyCorp',
             'Alixz',
             'Spacy',
+            '─────────────────',
+            `Accuracy : ${accuracy.toFixed(2)}%`,
+            `Best combo : ${bestCombo ? bestCombo : 0}`,
             '─────────────────',
             'Thank you for playing !',
         ];
