@@ -140,10 +140,10 @@
 
     // -- Combo counter HUD (bottom-left) --------------------------------------
     combo: {
-        xOffset: 45,           // distance from the left edge
-        mainYOffset: 45,       // distance from bottom for the lowest element
-        captionFontSize: 18,   // px for the small labels above each number
-        fontSize: 100,         // px for the combo number
+        xOffset: 45,           // distance from the left/right edge for HUD values
+        mainYOffset: 25,       // distance from bottom for combo-points value
+        precisionYOffset: 45,  // distance from top for precision value
+        fontSize: 100,         // px (numeric so it's easier to do digit-width math)
         color: "#ffffff",
         ghostAlpha: 0.2,       // opacity of the ghost (echo) copy of the counter
         mainScaleBounce: 1.1,  // scale the main counter briefly grows to on increment
@@ -287,7 +287,6 @@ let lowPowerMode = false;
 let hardMode = false;
 let introVideoElement = null;
 let introVideoFrame = null;
-let endScreenVideoElement = null;
 
 function getSongTitle() {
     const song = taPlayer?.data?.song;
@@ -493,18 +492,12 @@ class ComboCounter {
         this.misses = 0;
 
         const cfg = gameSettings.combo;
-        const x        = cfg.xOffset;
-        const accSize  = Math.round(cfg.fontSize / 2);
-        const capSize  = cfg.captionFontSize;
-        const baseY    = scene.scale.height - cfg.mainYOffset;
+        this.comboX = cfg.xOffset;
+        this.comboY = scene.scale.height - cfg.mainYOffset;
+        this.precisionX = scene.scale.width - cfg.xOffset;
+        this.precisionY = cfg.precisionYOffset;
 
-        // Layout (bottom to top): accuracy number → accuracy caption → gap → combo number → combo caption
-        const accNumY   = baseY;
-        const accCapY   = accNumY   - accSize      - 3;
-        const comboNumY = accCapY   - capSize      - 10;
-        const comboCapY = comboNumY - cfg.fontSize - 3;
-
-        const numStyle = (size, thickness) => ({
+        const textStyle = (size, thickness) => ({
             fontFamily: gameSettings.fonts.ui,
             fontSize: `${size}px`,
             color: cfg.color,
@@ -513,28 +506,14 @@ class ComboCounter {
             strokeThickness: thickness,
         });
 
-        const capStyle = {
-            fontFamily: gameSettings.fonts.ui,
-            fontSize: `${capSize}px`,
-            color: "#aaaaaa",
-            stroke: "#000000",
-            strokeThickness: 3,
-        };
-
-        this.comboCaption = scene.add.text(x, comboCapY, "COMBO", capStyle)
-            .setOrigin(0, 1).setDepth(100);
-
-        this.ghostText = scene.add.text(x, comboNumY, "0", numStyle(cfg.fontSize, 4))
+        this.ghostText = scene.add.text(this.comboX, this.comboY, "0", textStyle(cfg.fontSize, 4))
             .setOrigin(0, 1).setAlpha(cfg.ghostAlpha).setDepth(100);
 
-        this.mainText = scene.add.text(x, comboNumY, "0", numStyle(cfg.fontSize, 6))
+        this.mainText = scene.add.text(this.comboX, this.comboY, "0", textStyle(cfg.fontSize, 6))
             .setOrigin(0, 1).setDepth(101);
 
-        this.accCaption = scene.add.text(x, accCapY, "ACCURACY", capStyle)
-            .setOrigin(0, 1).setDepth(102);
-
-        this.precisionText = scene.add.text(x, accNumY, this.formatPrecision(), numStyle(accSize, 4))
-            .setOrigin(0, 1).setDepth(102);
+        this.precisionText = scene.add.text(this.precisionX, this.precisionY, this.formatPrecision(), textStyle(cfg.fontSize / 2, 6))
+            .setOrigin(1, 0).setDepth(102);
     }
 
     increment() {
@@ -1924,8 +1903,6 @@ class GameScene extends Phaser.Scene {
         this.fallTimeMultiplier = gameSettings.lyrics.fallTimeMsMultiplier;
         this.fallTime = gameSettings.lyrics.fallTimeMs * this.fallTimeMultiplier;
         this.destroyThreshold = gameSettings.lyrics.destroyOverflowRatio;
-        this.songStarted = false;
-        this.songEndTriggered = false;
 
         this.catcher = new Catcher(this, this.scale.height / 2);
         this.waveState = new WaveState();
@@ -1990,17 +1967,7 @@ class GameScene extends Phaser.Scene {
 
         if (!taPlayer) return;
 
-        if (taPlayer.isPlaying) {
-            this.songStarted = true;
-        } else {
-            // Song stopped after it had been playing → natural end
-            if (this.songStarted && !this.songEndTriggered) {
-                this.songEndTriggered = true;
-                this.startSongEndSequence();
-            }
-            return;
-        }
-
+        if (!taPlayer.isPlaying) return;
         const songTime = taPlayer.timer?.position ?? 0;
         const startX = w + gameSettings.lyrics.startXOffset;
 
@@ -2251,28 +2218,6 @@ class GameScene extends Phaser.Scene {
         this.catcher.playKnockAnim();
     }
 
-    startSongEndSequence() {
-        // Disable player input during fade-out
-        this.input.keyboard.enabled = false;
-        this.input.enabled = false;
-
-        const w = this.scale.width;
-        const h = this.scale.height;
-        const overlay = this.add.rectangle(w / 2, h / 2, w, h, 0x000000)
-            .setAlpha(0).setDepth(99999);
-
-        this.tweens.add({
-            targets: overlay,
-            alpha: 1,
-            duration: gameSettings.endScreen.fadeOutDurationMs,
-            ease: 'Quad.easeIn',
-            onComplete: () => {
-                this.scene.launch('EndScene');
-                this.scene.stop();
-            },
-        });
-    }
-
     loadLyrics(firstChar) {
         this.pendingChars = [];
         let char = firstChar;
@@ -2389,7 +2334,7 @@ const config = {
     height: window.innerHeight,
     transparent: true,
     physics: { default: "arcade" },
-    scene: [BootScene, TitleScene, GameScene, EndScene],
+    scene: [BootScene, TitleScene, GameScene],
     scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH }
 };
 
@@ -2401,6 +2346,3 @@ taPlayer.addListener({
     onTimerReady() { isTextAliveReady = true; },
 });
 taPlayer.createFromSongUrl(gameSettings.api.songUrl);
-
-
-
