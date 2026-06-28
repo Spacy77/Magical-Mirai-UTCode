@@ -951,7 +951,6 @@ class ActiveChar {
 
         const newScaleX = 1 - t;
         this.obj.scaleX = newScaleX;
-        this.obj.x = catcherX + (this.obj.width * newScaleX) / 2;
         this.obj.scaleY = 1 + 0.25 * Math.sin(Math.PI * t);
 
         if (t >= 1) {
