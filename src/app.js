@@ -2337,15 +2337,14 @@ class EndScene extends Phaser.Scene {
 
         const lines = [
             'アニメーション / Animations',
-            '─────────────────',
             'LeLad (intro animation)',
             'Galaxy77 (pixel art)',
+            ' ',
             'プログラム / Programming',
-            '─────────────────',
             'PouchyCorp',
             'Alixz',
             'Spacy',
-            '─────────────────',
+            ' ',
             'Thank you for playing !',
         ];
 
