@@ -1,13 +1,10 @@
 # Magical Mirai 2026 Programming Contest : UTCode 2026
 
 Submission for the **Magical Mirai 2026 Programming Contest** using the [TextAlive App API](https://developer.textalive.jp/).  
-Lyrics fall from the right side of the screen in time with the music. The player controls a catcher bar to intercept each character as it arrives. 
 
 ---
 
 ## How to launch
-
-No backend server, Python script, or generated FFT JSON is required. The music visualizer is driven directly by TextAlive song-map signals in the browser.
 
 Opening `index.html` directly can work in permissive browser setups. If your browser blocks TextAlive/CDN/local media from `file://`, serve the folder with any tiny static HTTP server.
 
@@ -31,6 +28,10 @@ Then open `http://localhost:8080` in your browser.
 npx serve .
 ```
 
+## Controls
+
+Space bar : changes the paddle's direction
+Time it on incoming characters with a halo around them
 
 ## Browser compatibility
 
@@ -39,12 +40,10 @@ Firefox 115+ - Fully supported
 Safari - Not tested !
 Mobile browsers - Supported
 
-**Internet connection is required** : the TextAlive API, Phaser, and font assets are loaded from CDN at runtime.
-
-## Controls
-
-Space bar : changes the paddle's direction
-Time it on incoming characters with a halo around them
+## Song Compatibility
+This app has been mostly tested for the song *The Last March on Earth* (https://piapro.jp/t/B3yJ, by Natsuyama Yotsugi × Dopam!ne).
+However, it is easy to change the played song by simply changing the link on top of the settings in app.js (api/songUrl).
+To get a link to a song, you must go on TextAlive's website https://textalive.jp/songs
 
 ## Known bugs
 
@@ -58,3 +57,5 @@ Galaxy77 (pixel art)
 PouchyCorp (programming)
 Alixz (programming)
 Spacy (programming)
+
+Contact : pichou.l.acarien@gmail.com
