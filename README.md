@@ -32,7 +32,7 @@ Space bar / Mouse button / Touch: changes the paddle's direction
 - Chrome 115+ - Fully supported (recommended) 
 - Firefox 115+ - Fully supported 
 - Safari - Not tested ! 
-- Mobile browsers - Supported 
+- Mobile browsers - Supported (not recommended)
 
 ## Song Compatibility
 This app has been mostly tested for the song *The Last March on Earth* (https://piapro.jp/t/B3yJ, by Natsuyama Yotsugi × Dopam!ne). 
