@@ -22,28 +22,22 @@ python -m http.server 8080
 ```
 Then open `http://localhost:8080` in your browser.
 
-### Alternative : Node.js
-
-```bash
-npx serve .
-```
-
 ## Controls
 
-Space bar : changes the paddle's direction
-Time it on incoming characters with a halo around them
+Space bar / Mouse button / Touch: changes the paddle's direction
+**Time it on incoming characters with a halo around them**
 
 ## Browser compatibility
 
-Chrome 115+ - Fully supported (recommended)
-Firefox 115+ - Fully supported
-Safari - Not tested !
-Mobile browsers - Supported
+- Chrome 115+ - Fully supported (recommended) 
+- Firefox 115+ - Fully supported 
+- Safari - Not tested ! 
+- Mobile browsers - Supported 
 
 ## Song Compatibility
-This app has been mostly tested for the song *The Last March on Earth* (https://piapro.jp/t/B3yJ, by Natsuyama Yotsugi × Dopam!ne).
-However, it is easy to change the played song by simply changing the link on top of the settings in app.js (api/songUrl).
-To get a link to a song, you must go on TextAlive's website https://textalive.jp/songs
+This app has been mostly tested for the song *The Last March on Earth* (https://piapro.jp/t/B3yJ, by Natsuyama Yotsugi × Dopam!ne). 
+However, it is easy to change the played song by simply changing the link on top of the settings in app.js (api/songUrl). 
+To get a link to a song, you must go on TextAlive's website https://textalive.jp/songs. 
 
 ## Known bugs
 
@@ -51,11 +45,11 @@ For some TextAlive songs, there seem to exist a big offset between the timemarks
 We are sadly powerless against this issue. If you encounter it, please switch songs.
 
 ## Credits
-This submission is by UTCode, a computer science association of the Université Technologique de Compiègne (French university)
-LeLad (intro animation)
-Galaxy77 (pixel art)
-PouchyCorp (programming)
-Alixz (programming)
-Spacy (programming)
+This submission is by UTCode, a computer science association of the Université Technologique de Compiègne (French university) 
+LeLad (intro animation) 
+Galaxy77 (pixel art) 
+PouchyCorp (programming) 
+Alixz (programming) 
+Spacy (programming) 
 
 Contact : pichou.l.acarien@gmail.com
