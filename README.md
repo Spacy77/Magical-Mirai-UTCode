@@ -1,7 +1,7 @@
 # Magical Mirai 2026 Programming Contest : UTCode 2026
 
-A rhythm game built for the **Magical Mirai 2026 Programming Contest** using the [TextAlive App API](https://developer.textalive.jp/).  
-Lyrics fall from the right side of the screen in time with the music. The player controls a catcher bar to intercept each character as it arrives.
+Submission for the **Magical Mirai 2026 Programming Contest** using the [TextAlive App API](https://developer.textalive.jp/).  
+Lyrics fall from the right side of the screen in time with the music. The player controls a catcher bar to intercept each character as it arrives. 
 
 ---
 
@@ -31,7 +31,6 @@ Then open `http://localhost:8080` in your browser.
 npx serve .
 ```
 
----
 
 ## Browser compatibility
 
@@ -42,34 +41,20 @@ Mobile browsers - Supported
 
 **Internet connection is required** : the TextAlive API, Phaser, and font assets are loaded from CDN at runtime.
 
----
-
 ## Controls
 
 Space bar : changes the paddle's direction
 Time it on incoming characters with a halo around them
 
----
+## Known bugs
 
-## Project structure
+For some TextAlive songs, there seem to exist a big offset between the timemarks from TextAlive API and the actual time the word is sung.
+We are sadly powerless against this issue. If you encounter it, please switch songs.
 
-```
-index.html          : entry point
-src/
-  app.js            : all game logic (single file)
-  styles.css        : minimal layout CSS
-media/
-  miku.webm         : intro video asset
-```
-
-Please do not delete :
-```bash
-# https://www.reddit.com/r/ffmpeg/comments/pn383s/command_line_for_transcoding_mp4_to_prores/
-ffmpeg -i mikusite_lelad1080p.avi -c:v prores_ks -profile:v standard -pix_fmt yuv422p -c:a copy out.mov
-ffmpeg -framerate 24 -start_number 0 -i "$HOME/Downloads/out2_%05d.png" -i "$HOME/Downloads/out.mov" \
-  -map 0:v:0 -map "1:a:0?" \
-  -c:v libvpx-vp9 -pix_fmt yuva420p -auto-alt-ref 0 \
-  -b:v 0 -crf 30 -row-mt 1 \
-  -c:a libopus -b:a 128k \
-  -shortest "$HOME/Downloads/out.webm"
-```
+## Credits
+This submission is by UTCode, a computer science association of the Université Technologique de Compiègne (French university)
+LeLad (intro animation)
+Galaxy77 (pixel art)
+PouchyCorp (programming)
+Alixz (programming)
+Spacy (programming)

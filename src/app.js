@@ -1,4 +1,4 @@
-const gameSettings = {
+﻿const gameSettings = {
     // -- TextAlive API --------------------------------------------------------
     api: {
         token: "1O5BTRwWsXT6TfAP",
@@ -15,9 +15,8 @@ const gameSettings = {
     },
 
     endScreen: {
-        creditsVideo: "media/credits_ending.mp4",  // placeholder — replace with real asset
-        fadeOutDurationMs: 1200,   // game → black
-        fadeInDurationMs: 1000,    // black → end screen
+        fadeOutDurationMs: 1200,
+        fadeInDurationMs: 1000,
         starCount: 70,
     },
 
@@ -50,10 +49,10 @@ const gameSettings = {
     phraseColors: [
         "#7DD3FC",
         "#A7F3D0",
-        "#86cecb",
-        "#137a7f",
-        "#e12885",
-        "#bec8d1",
+        "#81fdaa",
+        "#4ff1fa",
+        "#ff67b3",
+        "#f5f7f8",
     ],
 
     // -- Fonts ----------------------------------------------------------------
@@ -128,12 +127,12 @@ const gameSettings = {
     // -- Background large-character flash effect -------------------------------
     // When a character is caught, a giant version of it briefly appears behind the scene.
     backgroundLyrics: {
-        fontSize: "500px",          // size of the background character
+        fontSize: "700px",          // size of the background character
         maxDurationBGEffect: 200,   // max time (ms) the effect stays fully visible
         maxDurationBGAnim: 100,     // max time (ms) of the scale-in animation
         sizeChangeCoeff: 5,         // how aggressively the size pulses during the animation
-        boringColors: ["#274c5e", "#3a7d7a", "#7fb8aa", "#d9efe7", "#fdfaf4"],
-        mildColors: ["#6d3fa9", "#a37ad9", "#2e7d5b", "#7ecf9a", "#e12885", "#137a7f"],
+        boringColors: ["#59a6cc", "#4fb4af", "#7ec4b2", "#d9efe7", "#fdfaf4"],
+        mildColors: ["#8f57d8", "#b485f1", "#44bd89", "#7ecf9a", "#ec2c8c", "#137a7f"],
         excitingColors: ["#ff9835", "#faa668", "#f52019", "#ff533a", "#ff7254"],
         startAlpha: 0.5,             // initial opacity of the background character
         arousalThresholds: [0.335, 0.37],
@@ -170,23 +169,18 @@ const gameSettings = {
     // -- FL Studio-style timeline background ----------------------------------
     FLBackground: {
         bgColor: 0x111111,        // main panel background
-        topBarColor: 0x111111,    // darker strip along the top (ruler area)
-        majorLineColor: 0x111111, // beat / bar divider lines
-        minorLineColor: 0x111111, // subdivision lines between beats
+        topBarColor: 0x2f353c,    // darker strip along the top (ruler area)
+        majorLineColor: 0x252a30, // beat / bar divider lines
+        minorLineColor: 0x39414a, // subdivision lines between beats
         textColor: "#d4d8dc",     // measure-number label color
         fontSize: "26px",
         topBarHeight: 50,         // height (px) of the ruler strip
         majorSpacing: 400,        // horizontal pixels between major (bar) lines
         subdivisions: 4,          // how many minor lines to draw between each major line
-        cellPaddingX: 10,         // horizontal inset for each colored cell
-        cellAlpha: 0.24,          // opacity of the colored cells
-        cellPalette: ["#7E57C2", "#673AB7", "#512DA8", "#311B92"],
-        cellColorMode: "random",   // "cycle" or "random"
-        colorAnimationEnabled: true,
-        colorAnimationSpeed: 0.9,
-        colorAnimationAmplitude: 50,
-        colorAnimationPhaseOffset: 0.85,
+        cellPalette: ["#da7eec", "#7ba9ff", "#47e6a9", "#f3e2c9"],
     },
+
+    
 
     // -- Heart mode -----------------------------------------------------------
     // Spawns floating hearts as a visual flourish (triggered externally).
@@ -297,7 +291,7 @@ let endScreenVideoElement = null;
 
 function getSongTitle() {
     const song = taPlayer?.data?.song;
-    return song?.name || song?.songName || song?.title || "Loading Song ... / 読み込み中...";
+    return song?.name || song?.songName || song?.title || "Loading Song ...  読み込み中...";
 }
 
 function createIntroVideoElement() {
@@ -423,47 +417,6 @@ function playIntroVideo(onComplete, onPlaybackBlocked, onFadeStart) {
     if (playPromise?.catch) {
         playPromise.catch(abort);
     }
-}
-
-function createEndScreenVideoElement() {
-    const url = gameSettings.endScreen.creditsVideo;
-    const video = document.createElement("video");
-    video.preload = "auto";
-    video.playsInline = true;
-    video.controls = false;
-    video.loop = false;
-    video.muted = true;
-
-    // Portrait layout: centered in the right half of the screen
-    video.style.position = "fixed";
-    video.style.top = "5vh";
-    video.style.height = "90vh";
-    video.style.width = "auto";
-    video.style.maxWidth = "43vw";
-    video.style.left = "75vw";
-    video.style.transform = "translateX(-50%)";
-    video.style.objectFit = "contain";
-    video.style.background = "#000000";
-    video.style.pointerEvents = "none";
-    video.style.zIndex = "5";
-    video.style.display = "none";
-    video.style.opacity = "0";
-
-    video.src = url;
-    document.body.appendChild(video);
-    video.load();
-
-    endScreenVideoElement = video;
-    return video;
-}
-
-function showEndScreenVideo() {
-    const video = endScreenVideoElement;
-    if (!video) return;
-    video.style.display = "block";
-    video.style.opacity = "1";
-    video.play().catch(() => {});
-    // No 'ended' listener — video freezes on last frame naturally when loop=false
 }
 
 // Font glyph detection
@@ -999,210 +952,196 @@ class ActiveChar {
 }
 
 class FLTimelineBackground extends Phaser.GameObjects.Container {
+
     constructor(scene, width, height) {
         super(scene, 0, 0);
 
         this.width = width;
         this.height = height;
+
         this.topBarHeight = gameSettings.FLBackground.topBarHeight;
-        this.colorAnimationEnabled = gameSettings.FLBackground.colorAnimationEnabled;
 
         this.scrollX = 0;
-        this._lastDrawTime = 0;
-        this.cellColorAssignments = new Map();
-        this.cellColorCursor = 0;
 
         this.graphics = scene.add.graphics();
-        // Pool of measure-number text objects : reused every frame to avoid GC churn
+
         this._labelPool = [];
 
         this.add(this.graphics);
 
         scene.add.existing(this);
 
-        this.redraw(0);
+        this.redraw();
     }
 
-    setColorAnimationEnabled(enabled) {
-        this.colorAnimationEnabled = enabled;
-        this.redraw(this._lastDrawTime);
-    }
-
-    _hexToHsl(hex) {
-        let value = hex.replace("#", "");
-        if (value.length === 3) {
-            value = value.split("").map(ch => ch + ch).join("");
-        }
-
-        const r = parseInt(value.slice(0, 2), 16) / 255;
-        const g = parseInt(value.slice(2, 4), 16) / 255;
-        const b = parseInt(value.slice(4, 6), 16) / 255;
-
-        const max = Math.max(r, g, b);
-        const min = Math.min(r, g, b);
-        const l = (max + min) / 2;
-
-        if (max === min) {
-            return { h: 0, s: 0, l };
-        }
-
-        const d = max - min;
-        const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-        let h = 0;
-
-        switch (max) {
-            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-            case g: h = (b - r) / d + 2; break;
-            case b: h = (r - g) / d + 4; break;
-        }
-
-        h /= 6;
-        return { h: h * 360, s, l };
-    }
-
-    _hslToHex(h, s, l) {
-        const hueToRgb = (p, q, t) => {
-            let tt = t;
-            if (tt < 0) tt += 1;
-            if (tt > 1) tt -= 1;
-            if (tt < 1 / 6) return p + (q - p) * 6 * tt;
-            if (tt < 1 / 2) return q;
-            if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
-            return p;
-        };
-
-        if (s === 0) {
-            const gray = Math.round(l * 255);
-            return `#${gray.toString(16).padStart(2, "0")}${gray.toString(16).padStart(2, "0")}${gray.toString(16).padStart(2, "0")}`;
-        }
-
-        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-        const p = 2 * l - q;
-        const hh = ((h % 360) + 360) % 360 / 360;
-        const r = Math.round(hueToRgb(p, q, hh + 1 / 3) * 255);
-        const g = Math.round(hueToRgb(p, q, hh) * 255);
-        const b = Math.round(hueToRgb(p, q, hh - 1 / 3) * 255);
-
-        return `#${[r, g, b].map(v => v.toString(16).padStart(2, "0")).join("")}`;
-    }
-
-    _getCellColor(logicalKey, timeMs) {
-        // We use HSL for cleaner tint animation
-
-        const cfg = gameSettings.FLBackground;
-        const palette = cfg.cellPalette || [];
-        let baseHex = this.cellColorAssignments.get(logicalKey);
-
-        if (!baseHex) {
-            baseHex = palette[Math.floor(Math.random() * palette.length)] || cfg.majorLineColor;
-            this.cellColorAssignments.set(logicalKey, baseHex);
-        }
-
-        if (!this.colorAnimationEnabled || !cfg.colorAnimationEnabled) {
-            return baseHex;
-        }
-
-        const { h, s, l } = this._hexToHsl(baseHex);
-        const lightnessShift = Math.sin(
-            (timeMs / 1000) * cfg.colorAnimationSpeed +
-            logicalKey * cfg.colorAnimationPhaseOffset
-        ) * (cfg.colorAnimationAmplitude / 200);
-        const targetL = Math.max(0.2, Math.min(0.85, l + lightnessShift));
-
-        return this._hslToHex(h, s, targetL);
-    }
-
-    // Returns an existing pooled label or creates a new one if the pool is exhausted
     _getOrCreateLabel(index) {
+
         if (index >= this._labelPool.length) {
-            const lbl = this.scene.add.text(0, 8, '', {
+
+            const lbl = this.scene.add.text(0, 8, "", {
                 fontFamily: gameSettings.fonts.ui,
                 fontSize: gameSettings.FLBackground.fontSize,
                 color: gameSettings.FLBackground.textColor
             });
+
             this._labelPool.push(lbl);
             this.add(lbl);
         }
+
         return this._labelPool[index];
     }
 
     update(songTime, startX, catcherX, fallTime) {
-        const pixelsPerMs = (startX - catcherX) / fallTime;
+
+        const pixelsPerMs =
+            (startX - catcherX) / fallTime;
+
         this.scrollX = songTime * pixelsPerMs;
-        this._lastDrawTime = songTime;
-        this.redraw(songTime);
+
+        this.redraw();
     }
 
-    redraw(timeMs = 0) {
+    redraw() {
+
         const g = this.graphics;
         const cfg = gameSettings.FLBackground;
 
         g.clear();
 
-        // Main background
-        g.fillStyle(gameSettings.FLBackground.bgColor);
+        // Background
+        g.fillStyle(cfg.bgColor);
         g.fillRect(0, 0, this.width, this.height);
+
+        //-------------------------------------------------
+        // Horizontal lanes
+        //-------------------------------------------------
+
+        const laneHeight = cfg.laneHeight ?? 48;
+
+        g.lineStyle(1, 0x707780, 0.15);
+
+        for (
+            let y = this.topBarHeight;
+            y < this.height;
+            y += laneHeight
+        ) {
+            g.beginPath();
+            g.moveTo(0, y);
+            g.lineTo(this.width, y);
+            g.strokePath();
+        }
+
+        //-------------------------------------------------
+        // Minor vertical grid
+        //-------------------------------------------------
 
         const majorSpacing = cfg.majorSpacing;
         const minorSpacing = majorSpacing / cfg.subdivisions;
-        const cellPaddingX = cfg.cellPaddingX || 0;
-        const cellWidth = majorSpacing - cellPaddingX * 2;
-        const cellHeight = this.height - this.topBarHeight - 2;
-        const cellY = this.topBarHeight + 1;
 
-        // Align grid so it loops infinitely
         const offset = this.scrollX % majorSpacing;
 
-        // Minor grid lines
-        g.lineStyle(1, cfg.minorLineColor, 1);
-        for (let x = -offset; x < this.width + majorSpacing; x += minorSpacing) {
+        g.lineStyle(1, cfg.minorLineColor, 0.15);
+
+        for (
+            let x = -offset;
+            x < this.width + majorSpacing;
+            x += minorSpacing
+        ) {
             g.beginPath();
             g.moveTo(x, this.topBarHeight);
             g.lineTo(x, this.height);
             g.strokePath();
         }
 
-        // Major grid lines + measure labels
-        g.lineStyle(2, cfg.majorLineColor, 1);
+        //-------------------------------------------------
+        // Major measures
+        //-------------------------------------------------
 
-        const firstMeasure = Math.floor(this.scrollX / majorSpacing);
+        const palette = cfg.cellPalette;
+
+        const accentWidth = cfg.accentWidth ?? 8;
+        const accentAlpha = cfg.accentAlpha ?? 0.6;
+
+        const firstMeasure =
+            Math.floor(this.scrollX / majorSpacing);
+
         let measure = firstMeasure + 1;
         let labelIndex = 0;
-        const totalCells = Math.ceil((this.width + majorSpacing) / majorSpacing) + 2;
 
-        // Add colors for every cell
-        for (let i = 0; i < totalCells; i++) {
-            const x = -offset + i * majorSpacing;
-            const cellX = x + cellPaddingX;
-            const logicalKey = measure;
-            const color = this._getCellColor(logicalKey, timeMs);
+        const totalMeasures =
+            Math.ceil((this.width + majorSpacing) / majorSpacing) + 2;
 
-            if (cellX + cellWidth >= 0 && cellX <= this.width) {
-                g.fillStyle(parseInt(color.replace("#", ""), 16), cfg.cellAlpha);
-                g.fillRect(cellX, cellY, cellWidth, cellHeight);
-            }
+        for (let i = 0; i < totalMeasures; i++) {
+
+            const x =
+                -offset + i * majorSpacing;
+
+            const color =
+                parseInt(
+                    palette[(measure - 1) % palette.length]
+                        .replace("#", ""),
+                    16
+                );
+
+            // Colored accent
+            g.fillStyle(color, accentAlpha);
+
+            g.fillRect(
+                x - accentWidth / 2,
+                this.topBarHeight,
+                accentWidth,
+                this.height - this.topBarHeight
+            );
+
+            // Strong line every 4 measures
+            const strong =
+                (measure - 1) % 4 === 0;
+
+            g.lineStyle(
+                strong ? 3 : 2,
+                cfg.majorLineColor,
+                strong ? 0.95 : 0.6
+            );
 
             g.beginPath();
             g.moveTo(x, 0);
             g.lineTo(x, this.height);
             g.strokePath();
 
-            const lbl = this._getOrCreateLabel(labelIndex++);
-            lbl.setPosition(x + 8, 8).setText(String(measure)).setVisible(true);
+            const lbl =
+                this._getOrCreateLabel(labelIndex++);
+
+            lbl
+                .setPosition(x + 8, 8)
+                .setText(measure)
+                .setVisible(true);
+
             measure++;
         }
 
-        // Hide any pool labels that are not needed this frame
-        for (let i = labelIndex; i < this._labelPool.length; i++) {
+        // Hide unused pooled labels
+        for (
+            let i = labelIndex;
+            i < this._labelPool.length;
+            i++
+        ) {
             this._labelPool[i].setVisible(false);
         }
 
-        // Top ruler bar (drawn over the grid so labels sit on top of it)
-        g.fillStyle(cfg.topBarColor);
-        g.fillRect(0, 0, this.width, this.topBarHeight);
+        //-------------------------------------------------
+        // Top ruler
+        //-------------------------------------------------
 
-        // Bottom border of ruler bar
+        g.fillStyle(cfg.topBarColor);
+        g.fillRect(
+            0,
+            0,
+            this.width,
+            this.topBarHeight
+        );
+
         g.lineStyle(2, 0x1f2328, 1);
+
         g.beginPath();
         g.moveTo(0, this.topBarHeight);
         g.lineTo(this.width, this.topBarHeight);
@@ -1210,12 +1149,16 @@ class FLTimelineBackground extends Phaser.GameObjects.Container {
     }
 
     destroy(fromScene) {
+
         for (const lbl of this._labelPool) {
             lbl.destroy();
         }
+
         this.graphics.destroy();
+
         super.destroy(fromScene);
     }
+
 }
 
 class BackgroundChar {
@@ -1325,20 +1268,7 @@ class BackgroundChar {
         this.hearts.length = 0;
     }
 
-    giveColorPalette(){
-        const arousal = this.taPlayer.getValenceArousal(this.taPlayer.timer.position).a;
-        if (arousal < gameSettings.backgroundLyrics.arousalThresholds[0]){
-            return gameSettings.backgroundLyrics.boringColors;
-        }
-        else if (arousal < gameSettings.backgroundLyrics.arousalThresholds[1]){
-            return gameSettings.backgroundLyrics.mildColors;
-        }
-        else{
-            return gameSettings.backgroundLyrics.excitingColors;
-        }
-    }
-
-    show(charText, duration, currentTime) {
+    show(charText, color,duration, currentTime) {
         this.startTime = currentTime;
         this.endTime = currentTime + duration;
 
@@ -1352,10 +1282,6 @@ class BackgroundChar {
         this.text.setText(charText);
         this.text.setAlpha(gameSettings.backgroundLyrics.startAlpha);
 
-        const colors = this.giveColorPalette();
-        const color = colors[
-            Math.floor(Math.random() * colors.length)
-        ];
         this.text.setColor(color);
 
         // Track font size as a number so we never need to parse the style string
@@ -1817,13 +1743,6 @@ class TitleScene extends Phaser.Scene {
         this.spinner.arc(0, 0, gameSettings.spinner.radius, 0, Math.PI * 1.5, false);
         this.spinner.strokePath();
 
-        // Loading label below spinner
-        this.loadingLabel = this.add.text(cx, cy + 120, "Loading... / 読み込み中...", {
-            fontFamily: gameSettings.fonts.ui,
-            fontSize: "20px",
-            color: "#777777",
-        }).setOrigin(0.5);
-
         // Play button : invisible until loading finishes
         this.playButtonBg = this.add.rectangle(cx, cy + 50, gameSettings.button.width, gameSettings.button.height, gameSettings.colors.primary);
         this.playButtonBg.setAlpha(0);
@@ -1954,7 +1873,7 @@ class TitleScene extends Phaser.Scene {
 
     _onLoadComplete() {
         this.titleText.setText(getSongTitle());
-        this.tweens.add({ targets: [this.spinner, this.loadingLabel], alpha: 0, duration: 500 });
+        this.tweens.add({ targets: [this.spinner], alpha: 0, duration: 500 });
         this.tweens.add({
             targets: [this.playButtonBg, this.playButtonText, this.playButtonCaption],
             alpha: 1,
@@ -2327,7 +2246,7 @@ class GameScene extends Phaser.Scene {
         this.comboCounter.increment();
 
         const charDuration = char.char.endTime - char.char.startTime;
-        this.backgroundChar.show(charObj.text, charDuration, taPlayer.timer?.position ?? 0);
+        this.backgroundChar.show(charObj.text, char.color, charDuration, taPlayer.timer?.position ?? 0);
 
         this.catcher.playKnockAnim();
     }
@@ -2380,16 +2299,8 @@ class EndScene extends Phaser.Scene {
         // Twinkling star field
         this._buildStars(gameSettings.endScreen.starCount, w, h);
 
-        // Vertical divider between credits and video panels
-        const divider = this.add.graphics();
-        divider.lineStyle(1, 0x333333, 1);
-        divider.lineBetween(w / 2, h * 0.05, w / 2, h * 0.95);
-
         // Credits panel (left half)
         this._buildCredits(w, h);
-
-        // Show the portrait video on the right half
-        showEndScreenVideo();
 
         // Fade in from black
         const overlay = this.add.rectangle(w / 2, h / 2, w, h, 0x000000)
@@ -2418,7 +2329,7 @@ class EndScene extends Phaser.Scene {
     }
 
     _buildCredits(w, h) {
-        const cx = w / 4;
+        const cx = w / 2;
 
         this.add.text(cx, h * 0.12, 'Credits', {
             fontFamily: gameSettings.fonts.main,
@@ -2470,7 +2381,6 @@ document.body.style.backgroundColor = gameSettings.colors.background;
 document.body.style.margin = "0";
 document.body.style.overflow = "hidden";
 introVideoElement = createIntroVideoElement();
-createEndScreenVideoElement();
 
 const config = {
     type: Phaser.AUTO,
