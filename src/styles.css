@@ -43,10 +43,25 @@ html, body {
     text-align: center;
 }
 
-
-@font-face {
-    font-family: 'jackeyfont';
-    src: url('jackeyfont.ttf') format('truetype');
+#rotate-icon {
+    font-size: 72px;
+    animation: spin90 1.5s ease-in-out infinite alternate;
+    display: block;
+    margin-bottom: 16px;
+    color: #8A2BE2;
 }
 
-/* Add or override more styles here as needed */
+#rotate-content p {
+    font-size: 20px;
+    line-height: 1.6;
+    margin: 0;
+}
+
+@keyframes spin90 {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(90deg); }
+}
+
+@media screen and (orientation: portrait) and (max-width: 900px) {
+    #rotate-overlay { display: flex; }
+}
