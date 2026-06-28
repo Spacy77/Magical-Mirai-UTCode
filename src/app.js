@@ -14,13 +14,6 @@ const gameSettings = {
         objectPosition: "center center",
     },
 
-    endScreen: {
-        creditsVideo: "media/credits_ending.mp4",  // placeholder — replace with real asset
-        fadeOutDurationMs: 1200,   // game → black
-        fadeInDurationMs: 1000,    // black → end screen
-        starCount: 70,
-    },
-
     // -- Global palette -------------------------------------------------------
     colors: {
         background: "#111111",   // scene background fill
@@ -141,10 +134,10 @@ const gameSettings = {
 
     // -- Combo counter HUD (bottom-left) --------------------------------------
     combo: {
-        xOffset: 45,           // distance from the left edge
-        mainYOffset: 45,       // distance from bottom for the lowest element
-        captionFontSize: 18,   // px for the small labels above each number
-        fontSize: 100,         // px for the combo number
+        xOffset: 45,           // distance from the left/right edge for HUD values
+        mainYOffset: 25,       // distance from bottom for combo-points value
+        precisionYOffset: 45,  // distance from top for precision value
+        fontSize: 100,         // px (numeric so it's easier to do digit-width math)
         color: "#ffffff",
         ghostAlpha: 0.2,       // opacity of the ghost (echo) copy of the counter
         mainScaleBounce: 1.1,  // scale the main counter briefly grows to on increment
@@ -293,7 +286,6 @@ let lowPowerMode = false;
 let hardMode = false;
 let introVideoElement = null;
 let introVideoFrame = null;
-let endScreenVideoElement = null;
 
 function getSongTitle() {
     const song = taPlayer?.data?.song;
@@ -425,47 +417,6 @@ function playIntroVideo(onComplete, onPlaybackBlocked, onFadeStart) {
     }
 }
 
-function createEndScreenVideoElement() {
-    const url = gameSettings.endScreen.creditsVideo;
-    const video = document.createElement("video");
-    video.preload = "auto";
-    video.playsInline = true;
-    video.controls = false;
-    video.loop = false;
-    video.muted = true;
-
-    // Portrait layout: centered in the right half of the screen
-    video.style.position = "fixed";
-    video.style.top = "5vh";
-    video.style.height = "90vh";
-    video.style.width = "auto";
-    video.style.maxWidth = "43vw";
-    video.style.left = "75vw";
-    video.style.transform = "translateX(-50%)";
-    video.style.objectFit = "contain";
-    video.style.background = "#000000";
-    video.style.pointerEvents = "none";
-    video.style.zIndex = "5";
-    video.style.display = "none";
-    video.style.opacity = "0";
-
-    video.src = url;
-    document.body.appendChild(video);
-    video.load();
-
-    endScreenVideoElement = video;
-    return video;
-}
-
-function showEndScreenVideo() {
-    const video = endScreenVideoElement;
-    if (!video) return;
-    video.style.display = "block";
-    video.style.opacity = "1";
-    video.play().catch(() => {});
-    // No 'ended' listener — video freezes on last frame naturally when loop=false
-}
-
 // Font glyph detection
 // Canvas renders nothing (or a tofu box identical to the fallback) when a font lacks a glyph.
 // We detect this by comparing pixel output of "fontName, monospace" vs "monospace" alone.
@@ -540,18 +491,12 @@ class ComboCounter {
         this.misses = 0;
 
         const cfg = gameSettings.combo;
-        const x        = cfg.xOffset;
-        const accSize  = Math.round(cfg.fontSize / 2);
-        const capSize  = cfg.captionFontSize;
-        const baseY    = scene.scale.height - cfg.mainYOffset;
+        this.comboX = cfg.xOffset;
+        this.comboY = scene.scale.height - cfg.mainYOffset;
+        this.precisionX = scene.scale.width - cfg.xOffset;
+        this.precisionY = cfg.precisionYOffset;
 
-        // Layout (bottom to top): accuracy number → accuracy caption → gap → combo number → combo caption
-        const accNumY   = baseY;
-        const accCapY   = accNumY   - accSize      - 3;
-        const comboNumY = accCapY   - capSize      - 10;
-        const comboCapY = comboNumY - cfg.fontSize - 3;
-
-        const numStyle = (size, thickness) => ({
+        const textStyle = (size, thickness) => ({
             fontFamily: gameSettings.fonts.ui,
             fontSize: `${size}px`,
             color: cfg.color,
@@ -560,28 +505,14 @@ class ComboCounter {
             strokeThickness: thickness,
         });
 
-        const capStyle = {
-            fontFamily: gameSettings.fonts.ui,
-            fontSize: `${capSize}px`,
-            color: "#aaaaaa",
-            stroke: "#000000",
-            strokeThickness: 3,
-        };
-
-        this.comboCaption = scene.add.text(x, comboCapY, "COMBO", capStyle)
-            .setOrigin(0, 1).setDepth(100);
-
-        this.ghostText = scene.add.text(x, comboNumY, "0", numStyle(cfg.fontSize, 4))
+        this.ghostText = scene.add.text(this.comboX, this.comboY, "0", textStyle(cfg.fontSize, 4))
             .setOrigin(0, 1).setAlpha(cfg.ghostAlpha).setDepth(100);
 
-        this.mainText = scene.add.text(x, comboNumY, "0", numStyle(cfg.fontSize, 6))
+        this.mainText = scene.add.text(this.comboX, this.comboY, "0", textStyle(cfg.fontSize, 6))
             .setOrigin(0, 1).setDepth(101);
 
-        this.accCaption = scene.add.text(x, accCapY, "ACCURACY", capStyle)
-            .setOrigin(0, 1).setDepth(102);
-
-        this.precisionText = scene.add.text(x, accNumY, this.formatPrecision(), numStyle(accSize, 4))
-            .setOrigin(0, 1).setDepth(102);
+        this.precisionText = scene.add.text(this.precisionX, this.precisionY, this.formatPrecision(), textStyle(cfg.fontSize / 2, 6))
+            .setOrigin(1, 0).setDepth(102);
     }
 
     increment() {
@@ -2005,8 +1936,6 @@ class GameScene extends Phaser.Scene {
         this.fallTimeMultiplier = gameSettings.lyrics.fallTimeMsMultiplier;
         this.fallTime = gameSettings.lyrics.fallTimeMs * this.fallTimeMultiplier;
         this.destroyThreshold = gameSettings.lyrics.destroyOverflowRatio;
-        this.songStarted = false;
-        this.songEndTriggered = false;
 
         this.catcher = new Catcher(this, this.scale.height / 2);
         this.waveState = new WaveState();
@@ -2071,17 +2000,7 @@ class GameScene extends Phaser.Scene {
 
         if (!taPlayer) return;
 
-        if (taPlayer.isPlaying) {
-            this.songStarted = true;
-        } else {
-            // Song stopped after it had been playing → natural end
-            if (this.songStarted && !this.songEndTriggered) {
-                this.songEndTriggered = true;
-                this.startSongEndSequence();
-            }
-            return;
-        }
-
+        if (!taPlayer.isPlaying) return;
         const songTime = taPlayer.timer?.position ?? 0;
         const startX = w + gameSettings.lyrics.startXOffset;
 
@@ -2332,28 +2251,6 @@ class GameScene extends Phaser.Scene {
         this.catcher.playKnockAnim();
     }
 
-    startSongEndSequence() {
-        // Disable player input during fade-out
-        this.input.keyboard.enabled = false;
-        this.input.enabled = false;
-
-        const w = this.scale.width;
-        const h = this.scale.height;
-        const overlay = this.add.rectangle(w / 2, h / 2, w, h, 0x000000)
-            .setAlpha(0).setDepth(99999);
-
-        this.tweens.add({
-            targets: overlay,
-            alpha: 1,
-            duration: gameSettings.endScreen.fadeOutDurationMs,
-            ease: 'Quad.easeIn',
-            onComplete: () => {
-                this.scene.launch('EndScene');
-                this.scene.stop();
-            },
-        });
-    }
-
     loadLyrics(firstChar) {
         this.pendingChars = [];
         let char = firstChar;
@@ -2367,110 +2264,10 @@ class GameScene extends Phaser.Scene {
 
 }
 
-class EndScene extends Phaser.Scene {
-    constructor() { super("EndScene"); }
-
-    create() {
-        const w = this.scale.width;
-        const h = this.scale.height;
-
-        // Solid black background
-        this.add.rectangle(w / 2, h / 2, w, h, 0x000000);
-
-        // Twinkling star field
-        this._buildStars(gameSettings.endScreen.starCount, w, h);
-
-        // Vertical divider between credits and video panels
-        const divider = this.add.graphics();
-        divider.lineStyle(1, 0x333333, 1);
-        divider.lineBetween(w / 2, h * 0.05, w / 2, h * 0.95);
-
-        // Credits panel (left half)
-        this._buildCredits(w, h);
-
-        // Show the portrait video on the right half
-        showEndScreenVideo();
-
-        // Fade in from black
-        const overlay = this.add.rectangle(w / 2, h / 2, w, h, 0x000000)
-            .setAlpha(1).setDepth(99999);
-        this.tweens.add({
-            targets: overlay,
-            alpha: 0,
-            duration: gameSettings.endScreen.fadeInDurationMs,
-            ease: 'Quad.easeOut',
-            onComplete: () => overlay.destroy(),
-        });
-    }
-
-    _buildStars(count, w, h) {
-        this.starData = [];
-        for (let i = 0; i < count; i++) {
-            this.starData.push({
-                x: Math.random() * w,
-                y: Math.random() * h,
-                r: 1 + Math.random() * 2,
-                phase: Math.random() * Math.PI * 2,
-                speed: 0.0008 + Math.random() * 0.0015,
-            });
-        }
-        this.starGraphics = this.add.graphics();
-    }
-
-    _buildCredits(w, h) {
-        const cx = w / 4;
-
-        this.add.text(cx, h * 0.12, 'Credits', {
-            fontFamily: gameSettings.fonts.main,
-            fontSize: "52px",
-            color: gameSettings.colors.textLight,
-            fontStyle: "bold",
-            stroke: "#000000",
-            strokeThickness: 6,
-        }).setOrigin(0.5);
-
-        const lines = [
-            'アニメーション / Animations',
-            '─────────────────',
-            'LeLad (intro animation)',
-            'Galaxy77 (pixel art)',
-            'プログラム / Programming',
-            '─────────────────',
-            'PouchyCorp',
-            'Alixz',
-            'Spacy',
-            '─────────────────',
-            'Thank you for playing !',
-        ];
-
-        this.add.text(cx, h * 0.25, lines.join('\n'), {
-            fontFamily: gameSettings.fonts.main,
-            fontSize: "20px",
-            color: "#BBBBBB",
-            align: "center",
-            lineSpacing: 8,
-            stroke: "#000000",
-            strokeThickness: 3,
-        }).setOrigin(0.5, 0);
-    }
-
-    update(time) {
-        if (!lowPowerMode && this.starGraphics && this.starData) {
-            this.starGraphics.clear();
-            for (const s of this.starData) {
-                const alpha = 0.15 + 0.75 * (0.5 + 0.5 * Math.sin(s.phase + time * s.speed));
-                this.starGraphics.fillStyle(0xffffff, alpha);
-                this.starGraphics.fillCircle(s.x, s.y, s.r);
-            }
-        }
-    }
-}
-
 document.body.style.backgroundColor = gameSettings.colors.background;
 document.body.style.margin = "0";
 document.body.style.overflow = "hidden";
 introVideoElement = createIntroVideoElement();
-createEndScreenVideoElement();
 
 const config = {
     type: Phaser.AUTO,
@@ -2479,7 +2276,7 @@ const config = {
     height: window.innerHeight,
     transparent: true,
     physics: { default: "arcade" },
-    scene: [BootScene, TitleScene, GameScene, EndScene],
+    scene: [BootScene, TitleScene, GameScene],
     scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH }
 };
 
@@ -2491,6 +2288,3 @@ taPlayer.addListener({
     onTimerReady() { isTextAliveReady = true; },
 });
 taPlayer.createFromSongUrl(gameSettings.api.songUrl);
-
-
-
