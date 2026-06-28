@@ -1,308 +1,581 @@
-// Instruction for Alex's god damn coding agent: Do not remove the comments, they are there for a reason.
-
 const gameSettings = {
+    // -- TextAlive API --------------------------------------------------------
     api: {
         token: "1O5BTRwWsXT6TfAP",
-        songUrl: "https://piapro.jp/t/B3yJ/20251215061727"
+        songUrl: "https://piapro.jp/t/B3yJ/20251215061727", // go to textAlive website to find the link, it is not directly on piapro
     },
+    // Volume sent to the TextAlive player (0-100)
+    songVolume: 70,
+
+    introVideo: {
+        url: "media/miku.webm",
+        fadeBeforeEndMs: 500,
+        objectFit: "cover",
+        objectPosition: "center center",
+    },
+
+    endScreen: {
+        fadeOutDurationMs: 1200,
+        fadeInDurationMs: 1000,
+        starCount: 70,
+    },
+
+    // -- Global palette -------------------------------------------------------
     colors: {
-        background: "#111111",
-        primary: 0x8A2BE2,
-        primaryHover: 0x6A1B9A,
-        textMain: "#E0E0E0",
-        textLight: "#FFFFFF",
-        textPrimary: "#8A2BE2",
-        strip: 0xCCCCCC,
-        pointer: 0x00FFFF
+        background: "#111111",   // scene background fill
+        primary: 0x8A2BE2,       // accent color used for UI elements (purple)
+        primaryHover: 0x6A1B9A,  // darker shade for button hover state
+        textMain: "#E0E0E0",     // default fallback color for characters without phrase context
+        textLight: "#FFFFFF",    // pure-white text (titles, labels)
+        textPrimary: "#8A2BE2",  // purple text used in the UI
+        pointer: 0x00FFFF        // spawn-Y pointer dot color (cyan)
     },
+
+    // -- Character color system -----------------------------------------------
+    // Each phrase gets a base color from phraseColors; within a phrase each word
+    // is multiplied by a factor from tintCycle to create brightness variety.
+
+    // Brightness multipliers applied per-word within a phrase (cycled).
+    // Values below 1 darken, above 1 brighten the phrase base color.
+    tintCycle: [
+        1.00,  
+        0.80,  
+        1.20,  
+        0.90,  
+        0.65,  
+    ],
+
+    // Base colors assigned to successive phrases (cycled if there are more phrases than entries)
+    phraseColors: [
+        "#7DD3FC",
+        "#A7F3D0",
+        "#81fdaa",
+        "#4ff1fa",
+        "#ff67b3",
+        "#f5f7f8",
+    ],
+
+    // -- Fonts ----------------------------------------------------------------
     fonts: {
-        main: 'jackeyfont',
-        ui: 'jackeyfont'
+        main:   '"zpix", "Yu Gothic", "Hiragino Sans", sans-serif',
+        ui:     '"zpix", "Yu Gothic", "Hiragino Sans", sans-serif',
+        bgChar: '"Yu Gothic", "Hiragino Sans", "Noto Sans JP", sans-serif',
     },
-    spinner: { radius: 50, thickness: 8, rotationSpeed: 0.1 },
+
+    // -- Loading screen spinner -----------------------------------------------
+    spinner: {
+        radius: 50,          // outer radius in px
+        thickness: 8,        // ring stroke width in px
+        rotationSpeed: 0.1   // radians per frame
+    },
+
+    // -- Menu buttons ---------------------------------------------------------
     button: { width: 250, height: 80, fontSize: "40px" },
-    catcher: { 
-        xPos: 120, 
-        width: 40, 
-        height: 300, 
-        maxSpeed: 1, 
-        responsiveness: 25.0,
-        marginY: 80,
-        slowedSpeed: 0.05
+
+    // -- Catcher (the vertical bar the player controls) -----------------------
+    catcher: {
+        xPos: 600,          // fixed X position from the left edge
+        width: 250,          // collision / visual width in px
+        height: 250,        // collision / visual height in px
+        maxSpeed: 0.8,        // maximum normalized speed (fraction of scene height per second)
+        slowedSpeed: 0.01,  // reduced speed while a strip is draining
+        responsiveness: 7.0, // exponential-smoothing factor : higher = snappier tracking
+        marginY: 80,         // minimum distance the catcher keeps from the top/bottom edges
+        animTime: 100,
+        beatBobScaleY: 0.85,      // scaleY at peak vertical squeeze on each beat
+        beatBobDuration: 80,      // ms to reach peak (same back, yoyo)
+        beatBobEase: 'Quad.easeOut',
     },
+
+    // -- Lyric characters -----------------------------------------------------
     lyrics: {
-        fallTimeMs: 1300,
-        fallTimeMsMultiplier: 1,
-        startXOffset: 100,
-        marginY: 100,
-        fontSize: "160px",
+        fallTimeMs: 1700,          // time (ms) for a character to travel from spawn to the catcher
+        fallTimeMsMultiplier: 1,   // global speed multiplier applied on top of fallTimeMs (1 = default)
+        startXOffset: 100,         // how many px past the right edge characters spawn off-screen
+        marginY: 100,              // vertical safe zone : characters never spawn closer than this to the top/bottom
+        fontSize: "130px",         // CSS font-size used for all lyric text objects
+
+        // A character that has moved past the catcher by more than (destroyOverflowRatio Ã: fallDistance)
+        // is removed even if it was never caught, preventing off-screen accumulation
         destroyOverflowRatio: 0.2,
+
+        // Minimum time gap (ms) between successive characters before a new Y position is allowed.
+        // Prevents the spawn pointer from jumping too often on rapid note sequences.
         minDelayNewYPos: 500,
-        minDelayLongChar: 500,
-        minGapBetweenChars: 100,
-        lyricsDelay: 200
-    },
-    backgroundLyrics: {
-        fontSize: "450px",
-        maxDurationBGEffect: 150,
-        maxDurationBGAnim: 100,
-        sizeChangeCoeff: 10,
-        colors: ["#D00000", "#FFB703", "#2A9D8F", "#86cecb", "#8338EC", "#e12885", "#137a7f"],
-        startAlpha: 0.5,
-        fadeOutSpeed: 5
-    },
-    catchParticles: {
-        maxSpeed: 10,
-        lifespan: { min: 30, max: 100 },
-        quantity: 4,
-        size: 45,
-        boringColors: [0x274c5e, 0x3a7d7a, 0x7fb8aa, 0xd9efe7, 0xfdfaf4],
-        mildColors: [0x6d3fa9, 0xa37ad9, 0x2e7d5b, 0x7ecf9a, 0xf3f0ea, 0xe12885, 0x137a7f],
-        excitingColors: [0xff9835, 0xfaa668, 0xf52019, 0xff533a, 0xff7254],
-        alpha: { min: 0.3, max: 0.6 },
-        effectSizes: [225, 300, 400],
-        arousalThresholds: [0.335, 0.37],
-        valenceThresholds: [0.15, 0.20]
-    },
-    combo: {
-        xOffset: 100,
-        mainYOffset: 125,
-        scoreYOffset: 175,
-        fontSize: 100,
-        color: "#ffffff",
-        ghostAlpha: 0.2,
-        mainScaleBounce: 1.1,
-        ghostScaleBounce: 1.4,
-        animDuration: 500,
 
-        displayXOffset: 230,
-        displayMainYOffset: 90,
-        displayScoreYOffset: 170,
-        displayFontSize: 40
-    },
-    charSpawnYPointer: { speed: 1 },
+        // Characters whose on-screen duration (endTime - startTime) is shorter than this (ms)
+        // do not get a trailing strip, because the strip would be too small to be meaningful.
+        minDelayLongChar: 400,
 
-    minDelayLongChar: 400,
+        // Spacing : overlap prevention
+        minCharSpacing: 20,      // min horizontal pixel gap before triggering a vertical shift
+        overlapYShift: 80,       // vertical pixel offset applied to a character that would overlap the previous one
 
-    wave: {
-        beatDuration: 500,
-        nextFlipTime: 0,
-        currentTravelBeats: 0,
-        patterns: [0.75, 1, 1, 0.5, 0.5, 1, 2, 2]
-    },
-
-    backdrop: {
-        minMusicalBackdropLenght: 2000,
-        musicalBackdropEndLeadTime: 10
-    },
-
-    special_chars: [" ", "　", ".", "。", ",", "、", "-", "ー", "～", "~"],
-
-    visualizer: {
-        numBars: 15,
-        barWidth: 60,
-        barGap: 5,
-        maxHeight: 800,
-        numSegments: 16,
-        segmentGap: 4,
-        reflectionSegments: 4,
-        reflectionAlpha: 0.25,
-        smoothingUp: 0.95,
-        smoothingDown: 0.04,
-        depth: -5,
-        
-        bellCurveStrength: 5,
-        beatSharpness: 20,
-        arousalWeight: 10.0,
-        beatWeight: 100.0,
-        noiseAmount: 0.60,
-        perBarDrift: 20,
-        minLevel: 50.0,
-
-        redThreshold: 0.4,
-        gradientStops: [
-            { r: 134,  g: 206, b: 203  }, //low
-            { r: 34, g: 16, b: 79   }, //middle
-            { r: 225, g: 40,  b: 133   }  //top
+        // Japanese closing punctuation : always attached directly to the right edge of the previous character
+        trailingChars: [
+            "、", "。", "！", "？", "」", "』", "）", "］", "】", "〉", "》"
         ],
 
-        minDelayTrigger: 5000
+        // Japanese opening punctuation : shifted left so the body text starts after them
+        leadingChars: [
+            "「", "『", "（", "［", "【", "〈", "《"
+        ],
+
+        lyricsDelay: 250
+    },
+
+    // -- Background large-character flash effect -------------------------------
+    // When a character is caught, a giant version of it briefly appears behind the scene.
+    backgroundLyrics: {
+        fontSize: "700px",          // size of the background character
+        maxDurationBGEffect: 200,   // max time (ms) the effect stays fully visible
+        maxDurationBGAnim: 100,     // max time (ms) of the scale-in animation
+        sizeChangeCoeff: 5,         // how aggressively the size pulses during the animation
+        boringColors: ["#59a6cc", "#4fb4af", "#7ec4b2", "#d9efe7", "#fdfaf4"],
+        mildColors: ["#8f57d8", "#b485f1", "#44bd89", "#7ecf9a", "#ec2c8c", "#137a7f"],
+        excitingColors: ["#ff9835", "#faa668", "#f52019", "#ff533a", "#ff7254"],
+        startAlpha: 0.5,             // initial opacity of the background character
+        arousalThresholds: [0.335, 0.37],
+    },
+
+    // -- Combo counter HUD (bottom-left) --------------------------------------
+    combo: {
+        xOffset: 45,           // distance from the left/right edge for HUD values
+        mainYOffset: 25,       // distance from bottom for combo-points value
+        precisionYOffset: 45,  // distance from top for precision value
+        fontSize: 100,         // px (numeric so it's easier to do digit-width math)
+        color: "#ffffff",
+        ghostAlpha: 0.2,       // opacity of the ghost (echo) copy of the counter
+        mainScaleBounce: 1.1,  // scale the main counter briefly grows to on increment
+        ghostScaleBounce: 1.4, // scale the ghost briefly grows to on increment (more exaggerated)
+        animDuration: 500,     // duration (ms) of the bounce-back tween
+    },
+
+    // -- Spawn-Y pointer ------------------------------------------------------
+    // A moving point that drifts up and down; each new character spawns at its current Y.
+    charSpawnYPointer: {
+        speed: 1  // fraction of scene height traveled per second at full velocity
+    },
+
+    // -- Wave / flip pattern --------------------------------------------------
+    // The spawn pointer periodically reverses direction to create a wave motion.
+    // `patterns` is a list of beat-durations (in beats) the pointer travels in one direction
+    // before flipping; the list is cycled indefinitely.
+    wave: {
+        beatDuration: 500,       // ms per beat (used to convert beat counts to wall-clock time)
+        patterns: [0.75, 1, 1, 0.5, 0.5, 1, 2, 2]  // beat durations per direction segment
+    },
+
+    // -- FL Studio-style timeline background ----------------------------------
+    FLBackground: {
+        bgColor: 0x111111,        // main panel background
+        topBarColor: 0x2f353c,    // darker strip along the top (ruler area)
+        majorLineColor: 0x252a30, // beat / bar divider lines
+        minorLineColor: 0x39414a, // subdivision lines between beats
+        textColor: "#d4d8dc",     // measure-number label color
+        fontSize: "26px",
+        topBarHeight: 50,         // height (px) of the ruler strip
+        majorSpacing: 400,        // horizontal pixels between major (bar) lines
+        subdivisions: 4,          // how many minor lines to draw between each major line
+        cellPalette: ["#da7eec", "#7ba9ff", "#47e6a9", "#f3e2c9"],
+    },
+
+    
+
+    // -- Heart mode -----------------------------------------------------------
+    // Spawns floating hearts as a visual flourish (triggered externally).
+    heartMode: {
+        heartAmount: 6,  // number of hearts spawned per trigger
+        minSize: 30,     // minimum heart diameter (px)
+        maxSize: 60,     // maximum heart diameter (px)
+    },
+
+    // Master switch : set to false to disable all particle effects globally
+    globalParticleToggle: true,
+
+    // -- Catch particle emitter (active config) --------------------------------
+    // Tint is not set here; it is overridden per-character in spawnCatchParticles()
+    // so each burst matches the caught character's color.
+    // Angle 0Â° = right; the burst fires rightward (away from the catcher wall) like debris.
+    particles: {
+        count: 22,
+
+        speedMin: 200,
+        speedMax: 550,
+
+        lifespan: 650,
+
+        scaleStart: 2.5,
+        scaleEnd: 0,
+
+        angleMin: -20,   // cone pointing right
+        angleMax: 20,
+    },
+
+    // -- Aura circle ----------------------------------------------------------
+    // A soft glowing circle drawn behind characters spawned at wave direction changes.
+    backgroundCircle: {
+        radiusMultiplier: 0.70, // circle radius = max(charWidth, charHeight) Ã: this
+        alpha: 0.18,            // opacity of the circle (kept low so it doesn't overpower the character)
+        fadeDuration: 300,      // ms over which the circle fades out when the character despawns
+    },
+
+    // -- Disintegration (caught-character dissolve) ----------------------------
+    // When a character is caught it freezes at the catcher while its strip drains, then
+    // its right edge stays anchored at the catcher while scaleX shrinks to 0. Combined
+    // with an alpha fade this makes the left side vanish first - a squishy wall-absorption.
+    disintegration: {
+        dissolveDuration: 700,  // ms for the squish-fade after the strip depletes
+    },
+
+    // -- Music visualizer -----------------------------------------------------
+    // Permanent background bar EQ driven directly by TextAlive song-map data.
+    // No FFT or audio capture required : bar heights are synthesised from vocal
+    // amplitude, beat pulses, chorus sections, valence/arousal, and chord changes.
+    // Mirrored vertically around the screen center; always visible at low opacity.
+    visualizer: {
+        numBars: 45,
+        barWidthRatio: 0.12,   // bar width as a fraction of per-bar cell (rest is gap)
+        numSegments: 14,
+        segmentGap: 3,
+        xOffset: 0,          // px to shift the bar group right of center (positive = right)
+        backgroundAlpha: 0.60,
+        gain: 1.0,             // master output multiplier applied after all signals are mixed
+
+        // Minimum bar activity when the song is otherwise silent : keeps the EQ subtly alive
+        restLevel: 0.006,
+
+        // Weights control how much each TextAlive signal contributes to the global energy level
+        vocalWeight: 0.66,     // vocal amplitude : dominant driver during sung phrases
+        beatWeight: 0.36,      // beat pulse : adds sharp transient peaks on each hit
+        arousalWeight: 0.04,   // valence/arousal "a" axis : lifts energy during intense moments
+        chorusBoost: 0.055,    // sustained lift applied while inside a chorus section
+
+        // Spectral shape parameters (control where energy concentrates across bars)
+        shimmerAmount: 0.22,   // amplitude of the slow per-band shimmer oscillation
+        beatSharpness: 5.2,    // exponent of the beat-pulse decay curve; higher = snappier transient
+        formantDrift: 0.32,    // rad/s rate at which the formant peak slowly drifts left/right
+        peakSharpness: 2.5,    // Gaussian sharpness of the spectral peaks; higher = narrower peaks, deeper valleys
+
+        noiseGate: 0.045,      // signals below this threshold are gated to zero (hides idle noise)
+        smoothingUp: 0.62,     // per-frame lerp factor when a bar is rising  (high = fast attack)
+        smoothingDown: 0.14,   // per-frame lerp factor when a bar is falling (low  = slow decay)
+
+        // Fraction of bars on each side that pinch to zero height (prevents hard-crop look at edges)
+        edgeFadeWidth: 0.06,
+        gradientStops: [
+            { r: 134, g: 206, b: 203 }, // low  (teal)
+            { r: 34,  g: 16,  b: 79  }, // mid  (dark purple)
+            { r: 225, g: 40,  b: 133 }  // high (pink)
+        ],
+    },
+
+    // -- Beat pinch effect ----------------------------------------------------
+    // On every TextAlive beat, a barrel/pincushion distortion briefly squeezes
+    // all on-screen lyric characters and the catcher, then springs back.
+    beatPinch: {
+        amount: 0.7,      // barrel FX amount at peak pinch (< 1 = pincushion, > 1 = barrel bulge)
+        duration: 70,     // ms to reach peak pinch (same duration back, yoyo)
+        ease: 'Quad.easeOut',
     },
 };
 
-const { Player } = TextAliveApp;
+const { Player, PlayerOptions } = TextAliveApp;
 let isTextAliveReady = false;
+let isIntroVideoReady = false;
+let lowPowerMode = false;
+let hardMode = false;
+let introVideoElement = null;
+let introVideoFrame = null;
+
+function getSongTitle() {
+    const song = taPlayer?.data?.song;
+    return song?.name || song?.songName || song?.title || "Loading Song ...  読み込み中...";
+}
+
+function createIntroVideoElement() {
+    const cfg = gameSettings.introVideo;
+    if (!cfg.url) {
+        return null;
+    }
+
+    const video = document.createElement("video");
+    video.preload = "auto";
+    video.playsInline = true;
+    video.controls = false;
+    video.style.position = "fixed";
+    video.style.inset = "0";
+    video.style.width = "100vw";
+    video.style.height = "100vh";
+    video.style.objectFit = cfg.objectFit;
+    video.style.objectPosition = cfg.objectPosition;
+    video.style.pointerEvents = "none";
+    video.style.opacity = "0";
+    video.style.display = "none";
+    video.style.zIndex = "10";
+    video.style.background = "transparent";
+
+    const markReady = () => {
+        if (isIntroVideoReady) return;
+        isIntroVideoReady = true;
+        video.removeEventListener("loadeddata", markReady);
+        video.removeEventListener("canplay", markReady);
+    };
+
+    video.addEventListener("loadeddata", markReady);
+    video.addEventListener("canplay", markReady);
+    video.addEventListener("error", () => {
+        window.setTimeout(() => video.load(), 1000);
+    });
+    video.src = cfg.url;
+    document.body.appendChild(video);
+    video.load();
+
+    return video;
+}
+
+function resetIntroVideo(video) {
+    if (introVideoFrame) {
+        cancelAnimationFrame(introVideoFrame);
+        introVideoFrame = null;
+    }
+
+    video.pause();
+    video.style.opacity = "0";
+    video.style.display = "none";
+
+    try {
+        video.currentTime = 0;
+    } catch (err) {
+        void err;
+    }
+}
+
+function playIntroVideo(onComplete, onPlaybackBlocked, onFadeStart) {
+    const video = introVideoElement;
+    if (!video || !isIntroVideoReady) {
+        onPlaybackBlocked();
+        return;
+    }
+
+    let finished = false;
+    let fadeStarted = false;
+    const fadeSeconds = gameSettings.introVideo.fadeBeforeEndMs / 1000;
+
+    const finish = () => {
+        if (finished) return;
+        finished = true;
+        video.removeEventListener("ended", finish);
+        video.removeEventListener("error", abort);
+        resetIntroVideo(video);
+        onComplete();
+    };
+
+    const abort = () => {
+        if (finished) return;
+        finished = true;
+        video.removeEventListener("ended", finish);
+        video.removeEventListener("error", abort);
+        resetIntroVideo(video);
+        video.load();
+        onPlaybackBlocked();
+    };
+
+    const updateOpacity = () => {
+        const duration = video.duration;
+        if (Number.isFinite(duration) && duration > 0 && fadeSeconds > 0) {
+            const remaining = duration - video.currentTime;
+            if (!fadeStarted && remaining <= fadeSeconds) {
+                fadeStarted = true;
+                onFadeStart?.();
+            }
+            const opacity = remaining <= fadeSeconds
+                ? Phaser.Math.Clamp(remaining / fadeSeconds, 0, 1)
+                : 1;
+            video.style.opacity = String(opacity);
+        } else {
+            video.style.opacity = "1";
+        }
+
+        if (!finished) {
+            introVideoFrame = requestAnimationFrame(updateOpacity);
+        }
+    };
+
+    video.removeEventListener("ended", finish);
+    video.removeEventListener("error", abort);
+    resetIntroVideo(video);
+    video.style.display = "block";
+    video.style.opacity = "1";
+    video.addEventListener("ended", finish);
+    video.addEventListener("error", abort);
+
+    const playPromise = video.play();
+    introVideoFrame = requestAnimationFrame(updateOpacity);
+
+    if (playPromise?.catch) {
+        playPromise.catch(abort);
+    }
+}
+
+// Font glyph detection
+// Canvas renders nothing (or a tofu box identical to the fallback) when a font lacks a glyph.
+// We detect this by comparing pixel output of "fontName, monospace" vs "monospace" alone.
+// If identical, the font had no glyph and we skip it.
+const _glyphCache = new Map();
+
+function fontHasGlyph(fontName, char) {
+    const key = `${fontName}\x00${char}`;
+    if (_glyphCache.has(key)) return _glyphCache.get(key);
+
+    const size = 24;
+    const canvas = document.createElement('canvas');
+    canvas.width = size * 2;
+    canvas.height = size * 2;
+    const ctx = canvas.getContext('2d');
+
+    const sample = (font) => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#fff';
+        ctx.font = `${size}px ${font}`;
+        ctx.fillText(char, 4, size + 4);
+        return ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    };
+
+    const withFont    = sample(`"${fontName}", monospace`);
+    const withoutFont = sample('monospace');
+
+    let hasGlyph = false;
+    for (let i = 0; i < withFont.length; i++) {
+        if (withFont[i] !== withoutFont[i]) { hasGlyph = true; break; }
+    }
+
+    _glyphCache.set(key, hasGlyph);
+    return hasGlyph;
+}
+
+function getLyricFont(char) {
+    const primaryFont = 'zpix';
+    if (fontHasGlyph(primaryFont, char)) return gameSettings.fonts.main;
+    return '"Yu Gothic", "Hiragino Sans", "Noto Sans JP", sans-serif';
+}
+
+// Color utilities
+function hexToRgb(hex) {
+    hex = hex.replace("#", "");
+    return {
+        r: parseInt(hex.substring(0, 2), 16),
+        g: parseInt(hex.substring(2, 4), 16),
+        b: parseInt(hex.substring(4, 6), 16),
+    };
+}
+
+function rgbToHex(r, g, b) {
+    return "#" + [r, g, b]
+        .map(v => Math.max(0, Math.min(255, Math.round(v))))
+        .map(v => v.toString(16).padStart(2, "0"))
+        .join("");
+}
+
+// Multiplies each channel by factor: <1 darkens, >1 brightens
+function tintColor(hex, factor) {
+    const { r, g, b } = hexToRgb(hex);
+    return rgbToHex(r * factor, g * factor, b * factor);
+}
 
 class ComboCounter {
     constructor(scene) {
         this.scene = scene;
         this.combo = 0;
         this.comboPoints = 0;
-        this.totalScore = 0;
+        this.hits = 0;
+        this.misses = 0;
 
-        this.valueX = this.scene.scale.width - gameSettings.combo.xOffset;
-        this.displayX = this.scene.scale.width - gameSettings.combo.displayXOffset;
-        this.varXOffset = 0;
+        const cfg = gameSettings.combo;
+        this.comboX = cfg.xOffset;
+        this.comboY = scene.scale.height - cfg.mainYOffset;
+        this.precisionX = scene.scale.width - cfg.xOffset;
+        this.precisionY = cfg.precisionYOffset;
 
-        this.ghostText = scene.add.text(this.valueX, gameSettings.combo.mainYOffset, "0", {
+        const textStyle = (size, thickness) => ({
             fontFamily: gameSettings.fonts.ui,
-            fontSize: `${gameSettings.combo.fontSize}px`,
-            color: gameSettings.combo.color,
+            fontSize: `${size}px`,
+            color: cfg.color,
             fontStyle: "bold",
             stroke: "#000000",
-            strokeThickness: 4
-        }).setOrigin(0, 1).setAlpha(gameSettings.combo.ghostAlpha).setDepth(100);
+            strokeThickness: thickness,
+        });
 
-        this.mainText = scene.add.text(this.valueX, gameSettings.combo.mainYOffset, "0", {
-            fontFamily: gameSettings.fonts.ui,
-            fontSize: `${gameSettings.combo.fontSize}px`,
-            color: gameSettings.combo.color,
-            fontStyle: "bold",
-            stroke: "#000000",
-            strokeThickness: 6
-        }).setOrigin(0, 1).setDepth(101);
+        this.ghostText = scene.add.text(this.comboX, this.comboY, "0", textStyle(cfg.fontSize, 4))
+            .setOrigin(0, 1).setAlpha(cfg.ghostAlpha).setDepth(100);
 
-        this.totalScoreText = scene.add.text(this.valueX, gameSettings.combo.scoreYOffset, "0", {
-            fontFamily: gameSettings.fonts.ui,
-            fontSize: `${gameSettings.combo.fontSize / 2}px`,
-            color: gameSettings.combo.color,
-            fontStyle: "bold",
-            stroke: "#000000",
-            strokeThickness: 6
-        }).setOrigin(0, 1).setDepth(102);
+        this.mainText = scene.add.text(this.comboX, this.comboY, "0", textStyle(cfg.fontSize, 6))
+            .setOrigin(0, 1).setDepth(101);
 
-        // Display text in front of combo and score
-        this.displayComboText = scene.add.text(this.displayX, gameSettings.combo.displayMainYOffset, "Combo", {
-            fontFamily: gameSettings.fonts.ui,
-            fontSize: `${gameSettings.combo.displayFontSize}px`,
-            color: gameSettings.combo.color,
-            fontStyle: "bold",
-            stroke: "#000000",
-            strokeThickness: 6
-        }).setOrigin(0, 1).setDepth(102);
-
-        this.displayTotalScoreText = scene.add.text(this.displayX, gameSettings.combo.displayScoreYOffset, "Score", {
-            fontFamily: gameSettings.fonts.ui,
-            fontSize: `${gameSettings.combo.displayFontSize}px`,
-            color: gameSettings.combo.color,
-            fontStyle: "bold",
-            stroke: "#000000",
-            strokeThickness: 6
-        }).setOrigin(0, 1).setDepth(102);
+        this.precisionText = scene.add.text(this.precisionX, this.precisionY, this.formatPrecision(), textStyle(cfg.fontSize / 2, 6))
+            .setOrigin(1, 0).setDepth(102);
     }
 
     increment() {
         this.combo++;
+        this.hits++;
         this.comboPoints = this.calcPointsCurrentCombo(this.combo);
-
-        if (this.comboPoints == 11 || this.comboPoints == 102 || this.comboPoints == 1002){
-            this.varXOffset += gameSettings.combo.fontSize / 2;
-
-            this.ghostText.x = this.valueX - this.varXOffset;
-            this.mainText.x = this.valueX - this.varXOffset;
-            this.totalScoreText.x = this.valueX - this.varXOffset;
-            this.displayComboText.x = this.displayX - this.varXOffset;
-
-            if (this.totalScoreText.x > this.valueX - this.varXOffset){
-                this.totalScoreText.x = this.valueX - this.varXOffset;
-            }
-            if (this.displayTotalScoreText.x > this.displayX - this.varXOffset){
-                this.displayTotalScoreText.x = this.displayX - this.varXOffset;
-            }
-        }
-
         this.updateText();
         this.playAnimation();
     }
 
-    reset() {
-        if (this.combo > 0) {
-            this.totalScore += this.comboPoints;
-            this.combo = 0;
-            this.comboPoints = 0;
+    miss() {
+        this.misses++;
+        this.combo = 0;
+        this.comboPoints = 0;
 
-            this.varXOffset = 0;
-            this.ghostText.x = this.valueX;
-            this.mainText.x = this.valueX;
-            this.displayComboText.x = this.displayX - this.varXOffset;
-
-            this.updateText();
-            this.scene.tweens.killTweensOf([this.mainText, this.ghostText]);
-            this.mainText.setScale(1);
-            this.ghostText.setScale(1);
-        }
+        this.updateText();
+        this.scene.tweens.killTweensOf([this.mainText, this.ghostText]);
+        this.mainText.setScale(1);
+        this.ghostText.setScale(1);
     }
 
     updateText() {
-        const text = this.comboPoints.toString();
-        this.mainText.setText(text);
-        this.ghostText.setText(text);
+        this.mainText.setText(this.comboPoints.toString());
+        this.ghostText.setText(this.comboPoints.toString());
+        this.precisionText.setText(this.formatPrecision());
+    }
 
-        const totalText = (this.comboPoints + this.totalScore).toString();
-        this.totalScoreText.setText(totalText);
+    formatPrecision() {
+        const totalJudged = this.hits + this.misses;
+        const percent = totalJudged > 0 ? (this.hits / totalJudged) * 100 : 100;
+        return `${percent.toFixed(2)}%`;
     }
 
     playAnimation() {
+        const cfg = gameSettings.combo;
         this.scene.tweens.killTweensOf([this.mainText, this.ghostText]);
 
-        this.scene.tweens.add({
-            targets: this.mainText,
-            scale: gameSettings.combo.mainScaleBounce,
-            duration: 40,
-            ease: 'Quad.easeOut'
-        });
-
-        this.scene.tweens.add({
-            targets: this.ghostText,
-            scale: gameSettings.combo.ghostScaleBounce,
-            duration: 40,
-            ease: 'Quad.easeOut'
-        });
-
-        this.scene.tweens.add({
-            targets: [this.mainText, this.ghostText],
-            scale: 1,
-            duration: gameSettings.combo.animDuration,
-            delay: 40,
-            ease: 'Back.easeOut'
-        });
+        this.scene.tweens.add({ targets: this.mainText,  scale: cfg.mainScaleBounce,  duration: 40, ease: 'Quad.easeOut' });
+        this.scene.tweens.add({ targets: this.ghostText, scale: cfg.ghostScaleBounce, duration: 40, ease: 'Quad.easeOut' });
+        this.scene.tweens.add({ targets: [this.mainText, this.ghostText], scale: 1, duration: cfg.animDuration, delay: 40, ease: 'Back.easeOut' });
     }
 
-    resize(sceneHeight) {
-        const y = sceneHeight - gameSettings.combo.yOffset;
-        this.mainText.y = y;
-        this.ghostText.y = y;
-    }
-
-    calcPointsCurrentCombo(combo){
-        if (combo < 1){
-            return 0;
-        }
-        if (combo < 20){
-            return Math.floor(0.16 * (combo**2) - 0.33 * combo + 1.16);
-        }
-        if (combo >= 20){
-            return 3 * combo;
-        }
+    calcPointsCurrentCombo(combo) {
+        if (combo < 1)  return 0;
+        if (combo < 20) return Math.floor(0.16 * combo ** 2 - 0.33 * combo + 1.16);
+        return 3 * combo;
     }
 }
 
 class WaveState {
     constructor() {
         this.beatDuration = gameSettings.wave.beatDuration;
-        this.nextFlipTime = gameSettings.wave.nextFlipTime;
-        this.currentTravelBeats = gameSettings.wave.currentTravelBeats;
+        this.nextFlipTime = 0;
+        this.currentTravelBeats = 0;
         this.patterns = gameSettings.wave.patterns;
     }
 
+    // Returns true when a flip fires : the caller uses this to trigger the spawn-aura effect.
     advance(songTime) {
-        if (songTime < this.nextFlipTime) {
-            return false;
-        }
-
-        const nextTravelBeats = Phaser.Utils.Array.GetRandom(this.patterns);
-        this.currentTravelBeats = nextTravelBeats;
-        this.nextFlipTime = songTime + nextTravelBeats * this.beatDuration;
+        if (songTime < this.nextFlipTime) return false;
+        this.currentTravelBeats = Phaser.Utils.Array.GetRandom(this.patterns);
+        this.nextFlipTime = songTime + this.currentTravelBeats * this.beatDuration;
         return true;
     }
 }
@@ -312,22 +585,28 @@ class Catcher {
         this.scene = scene;
         this.direction = 1;
         this.velocity = 0;
-        this.sprite = scene.add.rectangle(
-            gameSettings.catcher.xPos,
+        this.catcherMaxSpeed = gameSettings.catcher.maxSpeed;
+        this.sprite = scene.add.image(
+            gameSettings.catcher.xPos - gameSettings.catcher.width,
             y,
-            gameSettings.catcher.width,
-            gameSettings.catcher.height,
-            gameSettings.colors.primary
+            "miku_standing"
         );
+        this.sprite.setDisplaySize(gameSettings.catcher.width, gameSettings.catcher.height);
+        this._baseScaleY = this.sprite.scaleY;
 
         scene.physics.add.existing(this.sprite);
         this.sprite.body.setImmovable(true);
+        this.sprite.body.setSize(gameSettings.catcher.width, gameSettings.catcher.height);
 
-        this.catcherMaxSpeed = gameSettings.catcher.maxSpeed;
+        this.isKnocking = false;
     }
 
     toggleDirection() {
         this.direction *= -1;
+    }
+
+    changeMaxSpeed(speed) {
+        this.catcherMaxSpeed = speed;
     }
 
     update(delta, sceneHeight) {
@@ -359,8 +638,29 @@ class Catcher {
         return this.sprite.y;
     }
 
-    changeMaxSpeed(speed){
-        this.catcherMaxSpeed = speed;
+    triggerBeatBob() {
+        const cfg = gameSettings.catcher;
+        this.scene.tweens.killTweensOf(this.sprite);
+        this.scene.tweens.add({
+            targets: this.sprite,
+            scaleY: this._baseScaleY * cfg.beatBobScaleY,
+            duration: cfg.beatBobDuration,
+            yoyo: true,
+            ease: cfg.beatBobEase,
+        });
+    }
+
+    playKnockAnim() {
+        this.sprite.setTexture("miku_knocking");
+        this.isKnocking = true;
+
+        if (this._catchResetTimer) this._catchResetTimer.remove();
+        this._catchResetTimer = this.scene.time.delayedCall(
+            gameSettings.catcher.animTime,
+            () => { this.sprite.setTexture("miku_standing"); }
+        );
+
+        this.isKnocking = false;
     }
 }
 
@@ -377,8 +677,13 @@ class CharSpawnYPointer {
         this.direction *= -1;
     }
 
+    changeSpeed(speed) {
+        this.charSpawnYPointerSpeed = speed;
+    }
+
     update(delta, sceneHeight) {
         const targetSpeed = this.direction * sceneHeight * this.charSpawnYPointerSpeed;
+        // Exponential smoothing: t approaches 1 as delta grows, making the pointer snap faster
         const t = 1.0 - Math.exp(-this.responsiveness * delta);
 
         this.velocity = Phaser.Math.Linear(this.velocity, targetSpeed, t);
@@ -397,53 +702,92 @@ class CharSpawnYPointer {
             this.velocity = Math.min(0, this.velocity);
         }
     }
-
-    changeSpeed(speed){
-        this.charSpawnYPointerSpeed = speed;
-    }
 }
 
 class ActiveChar {
-    constructor(scene, char, obj, startX, yPos, stripLength, stripHeight, charSpawnYPointerRef, effectiveStartTime) {
+    constructor(scene, char, obj, startX, yPos, stripLength, stripHeight, auraOnSpawn, effectiveStartTime) {
         this.scene = scene;
         this.char = char;
         this.obj = obj;
         this.startX = startX;
         this.yPos = yPos;
-        this.charSpawnYPointer = charSpawnYPointerRef;
-        this.effectiveStartTime = effectiveStartTime;
+
+        // Numeric color derived once and reused for the strip, aura, and catch particles
+        this.color = Phaser.Display.Color.HexStringToColor(this.obj.style.color).color;
+
         this.strip = this.createStrip(stripLength, stripHeight);
+        this.auraOnSpawn = auraOnSpawn;
+
+        this.backgroundCircle = this.createBackgroundCircle();
+        this.caught = false;
+
+        this.effectiveStartTime = effectiveStartTime;
     }
 
     createStrip(stripLength, stripHeight) {
-        if (stripLength < gameSettings.minDelayLongChar) {
+        if (stripLength < gameSettings.lyrics.minDelayLongChar) {
             return null;
         }
-
-        this.charSpawnYPointer.changeSpeed(gameSettings.catcher.slowedSpeed);
-        setTimeout(() => {
-            this.charSpawnYPointer.changeSpeed(gameSettings.charSpawnYPointer.speed);}, 
-        stripLength);
 
         const strip = this.scene.add.rectangle(
             this.startX + this.obj.width / 2,
             this.yPos,
             stripLength,
             stripHeight,
-            gameSettings.colors.strip,
+            this.color,
             1
         );
 
         strip.setOrigin(0, 0.5);
         strip.setDepth(-1);
+
         return strip;
     }
 
-    update(time, startX, catcherX, fallTime, delta, destroyThreshold, fallDistance, charSize, dyingStrips) {
+    updateStripPosition(startX, catcherX, progress, charSize) {
+        if (this.strip) {
+            this.strip.x =
+                startX - (startX - catcherX) * progress + charSize / 2;
+        }
+    }
+
+    createBackgroundCircle() {
+        if (!this.auraOnSpawn) {
+            return null;
+        }
+
+        const radius =
+            Math.max(this.obj.width, this.obj.height) *
+            gameSettings.backgroundCircle.radiusMultiplier;
+
+        const circle = this.scene.add.circle(
+            this.obj.x,
+            this.obj.y,
+            radius,
+            this.color,
+            gameSettings.backgroundCircle.alpha
+        );
+
+        circle.setDepth(this.obj.depth - 1);
+
+        return circle;
+    }
+
+    update(time, catcherX, fallTime, delta, destroyThreshold, fallDistance, charSize, dyingStrips) {
         const progress = (time - (this.effectiveStartTime - fallTime)) / fallTime;
 
-        this.obj.x = startX - (startX - catcherX) * progress;
-        this.updateStripPosition(startX, catcherX, progress, charSize);
+        this.obj.x = this.startX - (this.startX - catcherX) * progress;
+        this.obj.y = this.yPos;
+
+        // Keep the physics body in sync with the manually-driven position so
+        // Arcade overlap detection always checks the current visual location.
+        this.obj.body?.reset(this.obj.x, this.obj.y);
+
+        if (this.backgroundCircle) {
+            this.backgroundCircle.x = this.obj.x;
+            this.backgroundCircle.y = this.obj.y;
+        }
+        this.updateStripPosition(this.startX, catcherX, progress, charSize);
 
         if (progress > 1 + destroyThreshold) {
             this.retire(dyingStrips, fallDistance, fallTime);
@@ -453,634 +797,1103 @@ class ActiveChar {
         return false;
     }
 
-    updateStripPosition(startX, catcherX, progress, charSize) {
-        if (this.strip != null) {
-            this.strip.x = startX - (startX - catcherX) * progress + charSize / 2;
+    spawnCatchParticles() {
+        if (this.caught) return;
+        this.caught = true;
+        if (!gameSettings.globalParticleToggle) return;
+
+        const pc = gameSettings.particles;
+        const scene = this.scene;
+        const originX = scene.catcher.x + gameSettings.catcher.width / 2;
+        const originY = this.obj.y;
+        const color = this.color;
+
+        const dots = [];
+        for (let i = 0; i < pc.count; i++) {
+            const angleRad = (Phaser.Math.FloatBetween(pc.angleMin, pc.angleMax) * Math.PI) / 180;
+            const speed = Phaser.Math.FloatBetween(pc.speedMin, pc.speedMax);
+            dots.push({ vx: Math.cos(angleRad) * speed, vy: Math.sin(angleRad) * speed });
         }
+
+        const gfx = scene.add.graphics();
+        let elapsed = 0;
+
+        const timer = scene.time.addEvent({
+            delay: 16,
+            loop: true,
+            callback: () => {
+                elapsed += 16;
+                if (elapsed >= pc.lifespan) {
+                    timer.remove(false);
+                    gfx.destroy();
+                    return;
+                }
+                const progress = elapsed / pc.lifespan;
+                const t = elapsed / 1000;
+                const radius = (pc.scaleStart + (pc.scaleEnd - pc.scaleStart) * progress) * 4;
+                gfx.clear();
+                gfx.fillStyle(color, 1 - progress);
+                for (const d of dots) {
+                    gfx.fillCircle(originX + d.vx * t, originY + d.vy * t, radius);
+                }
+            },
+        });
     }
 
+    // RETIRE (MISS / OFFSCREEN)
     retire(dyingStrips, fallDistance, fallTime) {
+        this.destroyVisuals();
 
-        if (this.strip == null) {
+        if (!this.strip) {
             this.obj.destroy();
             return;
         }
 
-        const stripDuration = (this.strip.width / fallDistance) * fallTime;
-        dyingStrips.push({ strip: this.strip, maxWidth: this.strip.width, progress: 0, obj: this.obj, stripDuration: stripDuration });
+        const stripDuration =
+            (this.strip.width / fallDistance) * fallTime;
+
+        dyingStrips.push({
+            strip: this.strip,
+            maxWidth: this.strip.width,
+            progress: 0,
+            obj: this.obj,
+            stripDuration
+        });
+    }
+
+    destroyVisuals() {
+        if (this.backgroundCircle) {
+            const circle = this.backgroundCircle;
+            // Null before the tween so in-flight update() calls skip repositioning the fading circle
+            this.backgroundCircle = null;
+            this.scene.tweens.add({
+                targets: circle,
+                alpha: 0,
+                duration: gameSettings.backgroundCircle.fadeDuration,
+                onComplete: () => circle.destroy()
+            });
+        }
+    }
+
+    // DISINTEGRATION - called once when the player catches this character
+    startDisintegration(dyingStrips, fallDistance, fallTime) {
+        this.destroyVisuals();
+
+        // Duration matches fall velocity: time for the character to travel its own width
+        this.squishDuration = (this.obj.width / fallDistance) * fallTime;
+
+        this.dissolveDelay = 0;
+        if (this.strip) {
+            const stripDuration = (this.strip.width / fallDistance) * fallTime;
+            this.dissolveDelay = stripDuration;
+            dyingStrips.push({
+                strip: this.strip,
+                maxWidth: this.strip.width,
+                progress: 0,
+                obj: null,
+                stripDuration,
+            });
+        }
+
+        this.dissolveWait = 0;
+        this.dissolveStarted = false;
+        this.dissolveElapsed = 0;
+    }
+
+    // Called each frame by GameScene.updateDisintegratingChars() while this character dissolves.
+    updateDisintegration(catcherX, delta) {
+        // -- Phase 1: hold the character at the catcher while the strip drains --
+        if (!this.dissolveStarted) {
+            this.obj.x = catcherX + this.obj.width / 2;
+            this.dissolveWait += delta;
+            if (this.dissolveWait >= this.dissolveDelay) {
+                this.dissolveStarted = true;
+            }
+            return false;
+        }
+
+        // -- Phase 2: left edge stays at catcherX, right edge squishes leftward --
+        // Linear (no easing) so the squish speed matches the character's fall momentum.
+        this.dissolveElapsed += delta;
+        const t = Math.min(this.dissolveElapsed / this.squishDuration, 1);
+
+        const newScaleX = 1 - t;
+        this.obj.scaleX = newScaleX;
+        this.obj.x = catcherX + (this.obj.width * newScaleX) / 2;
+        this.obj.scaleY = 1 + 0.25 * Math.sin(Math.PI * t);
+
+        if (t >= 1) {
+            this.obj.destroy();
+            return true;
+        }
+        return false;
     }
 }
 
-class MusicalBackdrop {
-    constructor(scene) {
-        this.scene = scene;
-        this.scroll = 0;
-        this.pulse = 0;
-        this.enabled = false;
-        this.state_change_time = 0;
-        this.opacity = 0;
-        this.trackSeed = [0.32, 0.68, 0.45, 0.82, 0.54, 0.74, 0.38, 0.62];
-        this.clipColors = [0x8a2be2, 0x9d4edd, 0x7b2cbf, 0xc77dff, 0x5a189a, 0xb5179e];
+class FLTimelineBackground extends Phaser.GameObjects.Container {
 
-        // ── Un seul objet graphics au lieu de 4 → 4x moins de clear() par frame
-        this.graphics = scene.add.graphics().setDepth(-10);
+    constructor(scene, width, height) {
+        super(scene, 0, 0);
 
-        // ── Backdrop statique pré-rendu en RenderTexture ──────────────────────
-        // Le fond sombre ne change jamais → on le dessine une seule fois
-        this.backdropTexture = null;
-        this._backdropDirty  = true; // force le premier rendu
-        this._lastW = 0;
-        this._lastH = 0;
+        this.width = width;
+        this.height = height;
 
-        // ── Throttle : ne redessine qu'une frame sur deux ─────────────────────
-        this._skipFrame = false;
+        this.topBarHeight = gameSettings.FLBackground.topBarHeight;
+
+        this.scrollX = 0;
+
+        this.graphics = scene.add.graphics();
+
+        this._labelPool = [];
+
+        this.add(this.graphics);
+
+        scene.add.existing(this);
+
+        this.redraw();
     }
 
-    enable(time) {
-        this.enabled = true;
-        this.state_change_time = time;
-    }
+    _getOrCreateLabel(index) {
 
-    disable(time) {
-        this.enabled = false;
-        this.state_change_time = time;
-    }
+        if (index >= this._labelPool.length) {
 
-    /**
-     * Construit (ou reconstruit si la taille a changé) la RenderTexture
-     * du fond statique. Appelé une seule fois tant que la taille ne change pas.
-     */
-    _rebuildBackdropTexture(leftGutter, top, usableHeight, sceneWidth, sceneHeight) {
-        if (this.backdropTexture) this.backdropTexture.destroy();
+            const lbl = this.scene.add.text(0, 8, "", {
+                fontFamily: gameSettings.fonts.ui,
+                fontSize: gameSettings.FLBackground.fontSize,
+                color: gameSettings.FLBackground.textColor
+            });
 
-        this.backdropTexture = this.scene.add.renderTexture(0, 0, sceneWidth, sceneHeight)
-            .setDepth(-11)
-            .setAlpha(0); // invisible par défaut, alpha géré par update()
-
-        const g = this.scene.make.graphics({ add: false });
-        g.fillStyle(0x0b0d12, 0.86);
-        g.fillRect(0, 0, sceneWidth, sceneHeight);
-        g.fillStyle(0x151824, 0.72);
-        g.fillRect(leftGutter, top - 22, sceneWidth - leftGutter, usableHeight + 44);
-        g.fillStyle(0x10131b, 0.9);
-        g.fillRect(0, top - 22, leftGutter, usableHeight + 44);
-        this.backdropTexture.draw(g, 0, 0);
-        g.destroy();
-
-        this._backdropDirty = false;
-        this._lastW = sceneWidth;
-        this._lastH = sceneHeight;
-    }
-
-    update(time, delta, sceneWidth, sceneHeight) {
-        // ── Throttle : saute une frame sur deux ──────────────────────────────
-        this._skipFrame = !this._skipFrame;
-        if (this._skipFrame) return;
-
-        // ── Opacité ───────────────────────────────────────────────────────────
-        const baseOpacity  = 0.45;
-        const fadeDuration = this.enabled ? 1000 : gameSettings.backdrop.musicalBackdropEndLeadTime;
-        const fadeProgress = Phaser.Math.Clamp((time - this.state_change_time) / fadeDuration, 0, 1);
-
-        this.opacity = this.enabled
-            ? Phaser.Math.Easing.Quartic.Out(fadeProgress)
-            : Phaser.Math.Linear(this.opacity || baseOpacity, baseOpacity,
-                Phaser.Math.Easing.Quartic.Out(fadeProgress));
-
-        const layerAlpha = Phaser.Math.Clamp(this.opacity, baseOpacity, 1);
-        this.graphics.setAlpha(layerAlpha);
-
-        // ── Layout ────────────────────────────────────────────────────────────
-        const leftGutter  = Math.max(110, sceneWidth * 0.11);
-        const rightEdge   = sceneWidth + 40;
-        const top         = Math.max(44, sceneHeight * 0.08);
-        const bottom      = sceneHeight - Math.max(58, sceneHeight * 0.08);
-        const usableHeight = Math.max(180, bottom - top);
-
-        // ── Backdrop statique ─────────────────────────────────────────────────
-        if (this._backdropDirty || sceneWidth !== this._lastW || sceneHeight !== this._lastH) {
-            this._rebuildBackdropTexture(leftGutter, top, usableHeight, sceneWidth, sceneHeight);
-        }
-        this.backdropTexture.setAlpha(layerAlpha);
-
-        // ── Paramètres dynamiques ──────────────────────────────────────────────
-        // trackCount réduit : 3 max au lieu de 8 → 3x moins de clips dessinés
-        const trackCount  = Phaser.Math.Clamp(Math.floor(usableHeight / 72), 3, 5);
-        const trackGap    = 8;
-        const trackHeight = (usableHeight - trackGap * (trackCount - 1)) / trackCount;
-        const barWidth    = Math.max(120, sceneWidth / 8);
-        const minorWidth  = barWidth / 4;
-        const clipSpacing = barWidth * 1.42;
-        const accentNumeric  = gameSettings.colors.pointer;
-
-        this.scroll += delta * (this.enabled ? 72 : 42);
-        // Pulse arrondi à 2 décimales pour éviter les recalculs inutiles
-        this.pulse = Math.round((0.5 + Math.sin(time * 0.006) * 0.5) * 100) / 100;
-
-        this.graphics.clear();
-
-        // ── Grille (lignes horizontales + verticales) ─────────────────────────
-        this.graphics.lineStyle(1, 0xffffff, 0.05);
-        for (let i = 0; i <= trackCount; i++) {
-            const y = top + i * (trackHeight + trackGap) - trackGap / 2;
-            this.graphics.lineBetween(0, y, rightEdge, y);
+            this._labelPool.push(lbl);
+            this.add(lbl);
         }
 
-        const firstMinor = leftGutter - (this.scroll % minorWidth);
-        for (let x = firstMinor; x < rightEdge; x += minorWidth) {
-            const isBar = Math.round((x - firstMinor) / minorWidth) % 4 === 0;
-            this.graphics.lineStyle(
-                isBar ? 2 : 1,
-                isBar ? accentNumeric : 0xffffff,
-                isBar ? 0.17 : 0.055
+        return this._labelPool[index];
+    }
+
+    update(songTime, startX, catcherX, fallTime) {
+
+        const pixelsPerMs =
+            (startX - catcherX) / fallTime;
+
+        this.scrollX = songTime * pixelsPerMs;
+
+        this.redraw();
+    }
+
+    redraw() {
+
+        const g = this.graphics;
+        const cfg = gameSettings.FLBackground;
+
+        g.clear();
+
+        // Background
+        g.fillStyle(cfg.bgColor);
+        g.fillRect(0, 0, this.width, this.height);
+
+        //-------------------------------------------------
+        // Horizontal lanes
+        //-------------------------------------------------
+
+        const laneHeight = cfg.laneHeight ?? 48;
+
+        g.lineStyle(1, 0x707780, 0.15);
+
+        for (
+            let y = this.topBarHeight;
+            y < this.height;
+            y += laneHeight
+        ) {
+            g.beginPath();
+            g.moveTo(0, y);
+            g.lineTo(this.width, y);
+            g.strokePath();
+        }
+
+        //-------------------------------------------------
+        // Minor vertical grid
+        //-------------------------------------------------
+
+        const majorSpacing = cfg.majorSpacing;
+        const minorSpacing = majorSpacing / cfg.subdivisions;
+
+        const offset = this.scrollX % majorSpacing;
+
+        g.lineStyle(1, cfg.minorLineColor, 0.15);
+
+        for (
+            let x = -offset;
+            x < this.width + majorSpacing;
+            x += minorSpacing
+        ) {
+            g.beginPath();
+            g.moveTo(x, this.topBarHeight);
+            g.lineTo(x, this.height);
+            g.strokePath();
+        }
+
+        //-------------------------------------------------
+        // Major measures
+        //-------------------------------------------------
+
+        const palette = cfg.cellPalette;
+
+        const accentWidth = cfg.accentWidth ?? 8;
+        const accentAlpha = cfg.accentAlpha ?? 0.6;
+
+        const firstMeasure =
+            Math.floor(this.scrollX / majorSpacing);
+
+        let measure = firstMeasure + 1;
+        let labelIndex = 0;
+
+        const totalMeasures =
+            Math.ceil((this.width + majorSpacing) / majorSpacing) + 2;
+
+        for (let i = 0; i < totalMeasures; i++) {
+
+            const x =
+                -offset + i * majorSpacing;
+
+            const color =
+                parseInt(
+                    palette[(measure - 1) % palette.length]
+                        .replace("#", ""),
+                    16
+                );
+
+            // Colored accent
+            g.fillStyle(color, accentAlpha);
+
+            g.fillRect(
+                x - accentWidth / 2,
+                this.topBarHeight,
+                accentWidth,
+                this.height - this.topBarHeight
             );
-            this.graphics.lineBetween(x, top - 22, x, bottom + 22);
+
+            // Strong line every 4 measures
+            const strong =
+                (measure - 1) % 4 === 0;
+
+            g.lineStyle(
+                strong ? 3 : 2,
+                cfg.majorLineColor,
+                strong ? 0.95 : 0.6
+            );
+
+            g.beginPath();
+            g.moveTo(x, 0);
+            g.lineTo(x, this.height);
+            g.strokePath();
+
+            const lbl =
+                this._getOrCreateLabel(labelIndex++);
+
+            lbl
+                .setPosition(x + 8, 8)
+                .setText(measure)
+                .setVisible(true);
+
+            measure++;
         }
 
-        // ── Clips ─────────────────────────────────────────────────────────────
-        // fillRect au lieu de fillRoundedRect : ~5x plus rapide
-        // 5 clips max au lieu de 8 : moins de draw calls
-        for (let i = 0; i < trackCount; i++) {
-            const trackY    = top + i * (trackHeight + trackGap);
-            const laneColor = this.clipColors[i % this.clipColors.length];
-            const trackNameWidth = leftGutter - 28;
+        // Hide unused pooled labels
+        for (
+            let i = labelIndex;
+            i < this._labelPool.length;
+            i++
+        ) {
+            this._labelPool[i].setVisible(false);
+        }
 
-            // En-tête de piste (gutter gauche)
-            this.graphics.fillStyle(laneColor, 0.12);
-            this.graphics.fillRect(16, trackY, trackNameWidth, trackHeight);
-            this.graphics.lineStyle(1, laneColor, 0.18);
-            this.graphics.strokeRect(16, trackY, trackNameWidth, trackHeight);  // strokeRect, pas strokeRoundedRect
-            this.graphics.fillStyle(laneColor, 0.18 + this.pulse * 0.06);
-            this.graphics.fillRect(26, trackY + 10, 8, trackHeight - 20);
+        //-------------------------------------------------
+        // Top ruler
+        //-------------------------------------------------
 
-            const travel      = this.scroll * (0.55 + i * 0.04);
-            const cycleOffset = travel % (clipSpacing * 1000); // grand cycle pour éviter les resets
+        g.fillStyle(cfg.topBarColor);
+        g.fillRect(
+            0,
+            0,
+            this.width,
+            this.topBarHeight
+        );
 
-            // Calcule les indices de clips visibles (de hors-écran gauche à hors-écran droit)
-            const firstC = Math.floor((cycleOffset - leftGutter - 80) / clipSpacing) - 1;
-            const lastC  = Math.ceil((cycleOffset + rightEdge + 80) / clipSpacing) + 1;
+        g.lineStyle(2, 0x1f2328, 1);
 
-            for (let c = firstC; c <= lastC; c++) {
-                // Modulo pour réutiliser les seeds en boucle
-                const seedIdx  = ((i + c) % this.trackSeed.length + this.trackSeed.length) % this.trackSeed.length;
-                const seed     = this.trackSeed[seedIdx];
-                const clipWidth = barWidth * (0.72 + seed * 0.9);
-                const clipX    = leftGutter + c * clipSpacing - cycleOffset;
-                const clipY    = trackY + 8 + (i % 2) * 3;
-                const clipH    = trackHeight - 16 - (i % 3) * 4;
+        g.beginPath();
+        g.moveTo(0, this.topBarHeight);
+        g.lineTo(this.width, this.topBarHeight);
+        g.strokePath();
+    }
 
-                // Filtre les clips hors de la zone visible
-                if (clipX > rightEdge + 80 || clipX + clipWidth < -80) continue;
+    destroy(fromScene) {
 
-                this.graphics.fillStyle(laneColor, 0.16 + (this.enabled ? 0.1 : 0));
-                this.graphics.fillRect(clipX, clipY, clipWidth, clipH);
-                this.graphics.lineStyle(1, laneColor, 0.34);
-                this.graphics.strokeRect(clipX, clipY, clipWidth, clipH);
+        for (const lbl of this._labelPool) {
+            lbl.destroy();
+        }
 
-                if (i % 3 === 0) {
-                    this.drawWaveform(clipX, clipY, clipWidth, clipH, laneColor, time, i);
-                } else if (i % 3 === 1) {
-                    this.drawMidiNotes(clipX, clipY, clipWidth, clipH, laneColor, i, c);
+        this.graphics.destroy();
+
+        super.destroy(fromScene);
+    }
+
+}
+
+class BackgroundChar {
+    constructor(scene, taPlayer) {
+        this.scene = scene;
+
+        this.startTime = 0;
+        this.endTime = 0;
+        this.colorIndex = 0;
+
+        this.text = scene.add.text(
+            scene.scale.width / 2,
+            scene.scale.height / 2,
+            "",
+            {
+                fontFamily: gameSettings.fonts.bgChar,
+                fontSize: gameSettings.backgroundLyrics.fontSize,
+                color: 0x000000,
+                fontStyle: "bold"
+            }
+        )
+            .setOrigin(0.5)
+            .setAlpha(0)
+            .setDepth(-1);
+
+        this.heartMode = false;
+
+        this.bigHeart = scene.add.text(
+            scene.scale.width / 2,
+            scene.scale.height / 2,
+            "❤",
+            {
+                fontSize: "250px",
+                color: "#ff4040",
+                padding: { top: 40 }
+            }
+        )
+            .setOrigin(0.5)
+            .setAlpha(0)
+            .setDepth(-1);
+
+        this.hearts = [];
+
+        this.taPlayer = taPlayer;
+    }
+
+    isHeart(text) {
+        return [
+            "❤",
+            "♥",
+            "♡",
+            "♡"
+        ].includes(text);
+    }
+
+    enterHeartMode() {
+        this.heartMode = true;
+
+        this.text.setAlpha(0);
+        this.bigHeart.setAlpha(1);
+        this.bigHeart.setScale(1);
+
+        const w = this.scene.scale.width;
+        const h = this.scene.scale.height;
+
+        for (const heart of this.hearts) {
+            heart.destroy();
+        }
+
+        this.hearts.length = 0;
+
+        for (let i = 0; i < gameSettings.heartMode.heartAmount; i++) {
+
+            const size = Phaser.Math.Between(gameSettings.heartMode.minSize, gameSettings.heartMode.maxSize);
+
+            const heart = this.scene.add.text(
+                Phaser.Math.Between(0, w),
+                Phaser.Math.Between(0, h),
+                "❤",
+                {
+                    fontSize: `${size}px`,
+                    color: "#ff6b8a",
+                    padding: { top: Math.ceil(size * 0.15) }
                 }
+            )
+                .setOrigin(0.5)
+                .setDepth(-2)
+                .setAlpha(0.2 + Math.random() * 0.4);
+
+            heart.baseScale = 0.6 + Math.random() * 0.8;
+            heart.phase = Math.random() * Math.PI * 2;
+            heart.floatSpeed = 10 + Math.random() * 20;
+
+            this.hearts.push(heart);
+        }
+    }
+
+    exitHeartMode() {
+        this.heartMode = false;
+
+        this.bigHeart.setAlpha(0);
+
+        for (const heart of this.hearts) {
+            heart.destroy();
+        }
+
+        this.hearts.length = 0;
+    }
+
+    show(charText, color,duration, currentTime) {
+        this.startTime = currentTime;
+        this.endTime = currentTime + duration;
+
+        if (this.isHeart(charText)) {
+            this.enterHeartMode();
+            return;
+        }
+
+        this.exitHeartMode();
+
+        this.text.setText(charText);
+        this.text.setAlpha(gameSettings.backgroundLyrics.startAlpha);
+
+        this.text.setColor(color);
+
+        // Track font size as a number so we never need to parse the style string
+        this._fontSize = parseInt(gameSettings.backgroundLyrics.fontSize);
+        this.text.setFontSize(this._fontSize);
+    }
+
+    updateHeartMode(currentTime, deltaMs) {
+        const t = currentTime / 1000;
+
+        const beat =
+            1 +
+            Math.sin(t * 12) * 0.12 +
+            Math.max(0, Math.sin(t * 6)) * 0.2;
+
+        this.bigHeart.setScale(beat);
+
+        const deltaSec = deltaMs / 1000;
+
+        for (const heart of this.hearts) {
+            heart.y -= heart.floatSpeed * deltaSec;
+
+            if (heart.y < -100) {
+                heart.y = this.scene.scale.height + 100;
+            }
+
+            const scale =
+                heart.baseScale +
+                Math.sin(t * 2 + heart.phase) * 0.1;
+
+            heart.setScale(scale);
+        }
+
+        // Fade out after the character's duration ends
+        if (currentTime >= this.endTime) {
+            const fadePerMs = 1 / gameSettings.backgroundLyrics.maxDurationBGEffect;
+            const alpha = Math.max(0, this.bigHeart.alpha - fadePerMs * deltaMs);
+
+            this.bigHeart.setAlpha(alpha);
+            for (const heart of this.hearts) {
+                heart.setAlpha(alpha * 0.5);
+            }
+
+            if (alpha <= 0) {
+                this.exitHeartMode();
             }
         }
-
-        // ── Playhead ──────────────────────────────────────────────────────────
-        this.drawPlayhead(leftGutter, top - 28, bottom + 28, sceneWidth, accentNumeric);
     }
 
-    // Waveform réduite : 8 steps au lieu de 18 → 2.25x moins de lineBetween
-    drawWaveform(x, y, width, height, color, time, trackIndex) {
-        const centerY = y + height / 2;
-        const steps   = 8; // ← était 18
+    update(currentTime, deltaMs) {
+        const animTime = gameSettings.backgroundLyrics.maxDurationBGAnim;
 
-        this.graphics.lineStyle(2, color, 0.33);
-        for (let i = 0; i < steps; i++) {
-            const px  = x + (i / steps) * width;
-            const amp = Math.sin(time * 0.004 + i * 0.9 + trackIndex) * height * 0.22;
-            this.graphics.lineBetween(px, centerY - amp, px + width / steps * 0.46, centerY + amp * 0.55);
+        if (this.heartMode) {
+            this.updateHeartMode(currentTime, deltaMs);
+            return;
+        }
+
+        if (currentTime >= this.endTime) {
+            if (this.text.alpha > 0) {
+                const fadePerMs = 1 / gameSettings.backgroundLyrics.maxDurationBGEffect;
+                this.text.setAlpha(Math.max(0, this.text.alpha - fadePerMs * deltaMs));
+            } else {
+                this.text.setText("");
+            }
+            return;
+        }
+
+        if (currentTime <= this.startTime + animTime) {
+            this._fontSize += gameSettings.backgroundLyrics.sizeChangeCoeff;
+            this.text.setFontSize(this._fontSize);
         }
     }
 
-    // MidiNotes sans fillRoundedRect → fillRect, et 6 notes au lieu de 10
-    drawMidiNotes(x, y, width, height, color, trackIndex, clipIndex) {
-        const rows       = 5;
-        const noteHeight = Math.max(3, height / 9);
-
-        this.graphics.fillStyle(color, 0.3);
-        for (let i = 0; i < 6; i++) { // ← était 10
-            const rowIndex  = i * 2 + trackIndex + clipIndex;
-            const row       = ((rowIndex % rows) + rows) % rows;
-            const noteX     = x + 12 + i * (width - 24) / 6;
-            const noteY     = y + 10 + row * (height - 20) / rows;
-            const noteWidth = width * (0.06 + ((i + trackIndex) % 3) * 0.025);
-            this.graphics.fillRect(noteX, noteY, noteWidth, noteHeight); // ← fillRect, pas fillRoundedRect
-        }
-    }
-
-    drawPlayhead(leftGutter, top, bottom, sceneWidth, color) {
-        const playheadX = leftGutter + Math.max(72, (sceneWidth - leftGutter) * 0.16);
-        this.graphics.lineStyle(3, color, 0.56 + this.pulse * 0.22);
-        this.graphics.lineBetween(playheadX, top, playheadX, bottom);
-        this.graphics.fillStyle(color, 0.16 + this.pulse * 0.1);
-        this.graphics.fillTriangle(playheadX - 9, top, playheadX + 9, top, playheadX, top + 14);
-        // Supprime le fillRect du halo du playhead (peu visible, coûteux)
+    clear() {
+        this.exitHeartMode();
+        this.text.setAlpha(0);
+        this.text.setText("");
+        this.startTime = 0;
+        this.endTime = 0;
     }
 
     destroy() {
-        this.graphics.destroy();
-        if (this.backdropTexture) this.backdropTexture.destroy();
+        this.text.destroy();
     }
 }
 
-/**
- * Visualisateur audio temps réel : colonnes de carrés colorés à la façon d'un égaliseur.
- * Utilise la Web Audio API (intégrée au navigateur, aucune dépendance externe).
- * Fallback automatique sur les données de beats TextAlive si CORS bloque l'accès audio.
- */
 class MusicVisualizer {
-    constructor(scene, config) {
+    constructor(scene, y) {
         this.scene = scene;
-
-        // ── Config mise en page ──────────────────────────────────────────────
-        this.x                  = config.x                  ?? 0;
-        this.y                  = config.y                  ?? scene.scale.height;
-        this.numBars            = config.numBars            ?? 16;
-        this.barWidth           = config.barWidth           ?? 35;
-        this.barGap             = config.barGap             ?? 5;
-        this.maxHeight          = config.maxHeight          ?? 250;
-        this.numSegments        = config.numSegments        ?? 12;
-        this.segmentGap         = config.segmentGap         ?? 4;
-        this.reflectionSegments = config.reflectionSegments ?? 4;
-        this.reflectionAlpha    = config.reflectionAlpha    ?? 0.25;
-        this.depth              = config.depth              ?? -5;
-        this.inactiveColor      = config.inactiveColor      ?? 0x1a1a1a;
-
-        // ── Lissage asymétrique (monte vite, descend lentement) ──────────────
-        this.smoothingUp   = config.smoothingUp   ?? 0.6;
-        this.smoothingDown = config.smoothingDown ?? 0.12;
-
-        // ── État Web Audio ───────────────────────────────────────────────────
-        this.audioContext = null;
-        this.analyser     = null;
-        this.dataArray    = null;
-        this.connected    = false;
-        this.corsBlocked  = false;
-
-        // ── Fallback TextAlive beat ──────────────────────────────────────────
-        // Utilisé si la connexion Web Audio échoue (CORS).
-        // Simule un signal global basé sur l'énergie du beat courant.
-        this.beatFallbackLevel = 0;
-
-        // ── Niveaux lissés courants [0..1] par barre ─────────────────────────
-        this.currentLevels = new Float32Array(this.numBars).fill(0);
-        // Phases d'oscillation indépendantes par barre — donne une vie propre à chaque colonne
-        this.barPhases = new Float32Array(this.numBars);
-        for (let b = 0; b < this.numBars; b++) {
-            this.barPhases[b] = Math.random() * Math.PI * 2;
-        }
-
-        // Mémorise les smoothings de base pour les adapter au BPM
-        this._baseSmoothingDown = this.smoothingDown;
-        this._baseSmoothingUp   = this.smoothingUp;
-
-        // Cache du profil d'accord courant (évite de recalculer à chaque frame)
-        this._lastChordName    = null;
-        this._lastChordProfile = null;
-
-        // Enveloppe de phrase courante
-        this._phraseEnvelope = 1.0;
-
-        // ── Couleurs par segment : vert → jaune → rouge ──────────────────────
+        this.y = y;
+        this.levels  = new Float32Array(gameSettings.visualizer.numBars).fill(0);
+        this._scratch = new Float32Array(gameSettings.visualizer.numBars); // reused by the blur pass
+        // Per-bar random phase offsets so the shimmer oscillations are never in sync
+        this.bandPhase = new Float32Array(gameSettings.visualizer.numBars);
         this.segmentColors = this._buildGradient();
+        this.graphics = scene.add.graphics().setDepth(-9999).setAlpha(gameSettings.visualizer.backgroundAlpha);
+        this._currentAlpha = gameSettings.visualizer.backgroundAlpha; // tracked separately for lerping
+        this._maxVocalAmplitude = 0; // cached from getMaxVocalAmplitude; 0 = not yet fetched
+        this._vocalPeak = 0.001;     // fallback running peak when the max is unavailable
+        this._lastChordName = "";
+        this._lastChordHash = 0.5;   // chord name hashed to [0,1]; drives formant/harmonic position
 
-        // ── Objet graphique Phaser ───────────────────────────────────────────
-        this.graphics = scene.add.graphics().setDepth(this.depth).setAlpha(0);
-
-        this.enabled = false;
+        for (let b = 0; b < this.bandPhase.length; b++)
+            this.bandPhase[b] = this._hashUnit(`bar-${b}`) * Math.PI * 2;
     }
 
-    // ── Connexion Web Audio ─────────────────────────────────────────────────
-    tryConnect() {
-        this.corsBlocked = true;
-        console.log("MusicVisualizer : mode fallback TextAlive activé");
-    }
+    update(taPlayer, hasChars) {
+        const positionMs = taPlayer?.timer?.position ?? taPlayer?.mediaPosition ?? 0;
+        this._readTextAliveSignals(taPlayer, positionMs);
 
-    /**
-     * Construit un tableau de facteurs par barre à partir du nom d'un accord.
-     * Les barres proches du fondamental et de la quinte sont renforcées.
-     * Ex: "Am" → fondamental A (9), quinte E (4)
-     */
-    _buildChordProfile(chordName) {
-        // Table de correspondance note → demi-ton (0 = C)
-        const noteMap = {
-            'C': 0, 'C#': 1, 'Db': 1,
-            'D': 2, 'D#': 3, 'Eb': 3,
-            'E': 4,
-            'F': 5, 'F#': 6, 'Gb': 6,
-            'G': 7, 'G#': 8, 'Ab': 8,
-            'A': 9, 'A#': 10, 'Bb': 10,
-            'B': 11
-        };
+        // Fade to full opacity when the screen is empty so the EQ takes focus,
+        // then fade back to backgroundAlpha once characters appear.
+        const cfg = gameSettings.visualizer;
+        const targetAlpha = hasChars ? cfg.backgroundAlpha : 1.0;
+        this._currentAlpha += (targetAlpha - this._currentAlpha) * 0.04;
+        this.graphics.setAlpha(this._currentAlpha);
 
-        // Extrait la note fondamentale du nom d'accord ("Am7" → "A", "C#maj" → "C#")
-        const match = chordName.match(/^([A-G][#b]?)/);
-        if (!match) return null;
-
-        const root  = noteMap[match[1]] ?? 0;
-        const fifth = (root + 7) % 12;
-
-        // Mappe les demi-tons vers des positions de barres
-        const rootBar  = (root  / 12) * this.numBars;
-        const fifthBar = (fifth / 12) * this.numBars;
-
-        const profile = new Float32Array(this.numBars);
-        for (let b = 0; b < this.numBars; b++) {
-            const dRoot  = Math.min(Math.abs(b - rootBar),  this.numBars - Math.abs(b - rootBar));
-            const dFifth = Math.min(Math.abs(b - fifthBar), this.numBars - Math.abs(b - fifthBar));
-
-            // Pic gaussien sur le fondamental (fort) et la quinte (plus doux)
-            const rootPeak  = Math.exp(-(dRoot  * dRoot)  / (this.numBars * 0.08));
-            const fifthPeak = Math.exp(-(dFifth * dFifth) / (this.numBars * 0.08)) * 0.5;
-
-            // Niveau de base 0.7 + modulation harmonique jusqu'à +0.5
-            profile[b] = 0.7 + 0.5 * Math.max(rootPeak, fifthPeak);
-        }
-
-        return profile;
-    }
-
-    /**
-     * Fallback : simule des niveaux de barres à partir des données de beat TextAlive.
-     * Donne un effet de pulsation rythmique quand la Web Audio est inaccessible.
-     */
-    _readBeatFallbackLevels(taPlayer) {
-        if (!taPlayer) return;
-
-        const pos = taPlayer.timer.position;
-
-        // ── 1. Valence / Arousal ─────────────────────────────────────────────────
-        const va      = taPlayer.getValenceArousal ? taPlayer.getValenceArousal(pos) : null;
-        const arousal = va ? Phaser.Math.Clamp((va.a + 1) / 2, 0, 1) : 0.5;
-        const valence = va ? Phaser.Math.Clamp((va.v + 1) / 2, 0, 1) : 0.5;
-
-        // ── 2. Beat ──────────────────────────────────────────────────────────────
-        const beat = taPlayer.findBeat(pos);
-        let pulse  = 0;
-        let bpm    = 120;
-        let beatPositionInBar = 0; // position dans la mesure (0 = temps fort)
-
-        if (beat) {
-            bpm = beat.bpm || 120;
-
-            // Attaque aiguisée proportionnelle à l'arousal
-            // Fort arousal = attaque plus brutale
-            const sharpness = (this.beatSharpness ?? 3) + arousal * 2;
-            pulse = Math.pow(Math.max(0, 1 - beat.progress(pos)), sharpness);
-
-            const decayFactor = 1 - pulse * arousal;
-            this.beatFallbackLevel *= (1 - decayFactor * 0.15);
-
-            // Position dans la mesure : déduite de l'index du beat
-            // Les temps forts (0, 2) donnent une impulsion plus forte que (1, 3)
-            if (beat.position !== undefined) {
-                beatPositionInBar = beat.position % 4;
-            }
-        }
-
-        // Coefficient de pulsion selon la position dans la mesure
-        // Temps 1 et 3 (index 0, 2) = forte impulsion
-        // Temps 2 et 4 (index 1, 3) = impulsion réduite
-        const beatAccentFactor = (beatPositionInBar % 2 === 0) ? 1.0 : 0.6;
-        const accentedPulse    = pulse * beatAccentFactor;
-
-        // ── 3. Adaptation du smoothing au BPM ────────────────────────────────────
-        // Plus le tempo est rapide, plus les barres montent et descendent vite
-        const bpmFactor     = bpm / 120;
-        this.smoothingDown  = this._baseSmoothingDown * bpmFactor;
-        this.smoothingUp    = Math.min(0.95, this._baseSmoothingUp * bpmFactor);
-
-        // ── 4. Enveloppe de phrase ───────────────────────────────────────────────
-        // Le visualisateur monte en intensité au fil d'une phrase et redescend à la fin
-        const phrase = taPlayer.findPhrase ? taPlayer.findPhrase(pos) : null;
-        if (phrase && phrase.endTime > phrase.startTime) {
-            const t = (pos - phrase.startTime) / (phrase.endTime - phrase.startTime);
-            // Attaque rapide (10%), sustain, release (15%)
-            const envelope = t < 0.10 ? t / 0.10
-                        : t > 0.85 ? 1 - (t - 0.85) / 0.15
-                        : 1.0;
-            // Lisse l'enveloppe pour éviter les sauts brusques
-            this._phraseEnvelope += (envelope - this._phraseEnvelope) * 0.05;
-        } else {
-            this._phraseEnvelope = 1.0;
-        }
-
-        // ── 5. Profil harmonique basé sur l'accord courant ───────────────────────
-        // Recalcule uniquement si l'accord a changé
-        const chord = taPlayer.findChord ? taPlayer.findChord(pos) : null;
-        const chordName = chord ? (chord.name ?? null) : null;
-        if (chordName !== this._lastChordName) {
-            this._lastChordName    = chordName;
-            this._lastChordProfile = chordName
-                ? this._buildChordProfile(chordName)
-                : null;
-        }
-
-        // ── 6. Niveau global ─────────────────────────────────────────────────────
-        const arousalW  = this.arousalWeight ?? 0.5;
-        const beatW     = this.beatWeight    ?? 0.5;
-        const baseLevel = arousal * arousalW + accentedPulse * beatW;
-        this.beatFallbackLevel += (baseLevel - this.beatFallbackLevel) * 0.4;
-        //console.log(`arousal : ${arousal} arousalW : ${arousalW} accentedPulse : ${accentedPulse} beatW : ${beatW}`);
-
-        // ── 7. Distribution par barre ────────────────────────────────────────────
-        const center      = (this.numBars - 1) / 2;
-        const bellStr     = this.bellCurveStrength ?? 4;
-        const drift       = this.perBarDrift       ?? 0.8;
-        const noise       = this.noiseAmount       ?? 0.25; // réduit vs avant
-        const minLevel    = this.minLevel          ?? 0.05;
-        const bpmDrift    = 0.001 * bpmFactor;
-
-        // La valence (positivité) décale le centre de gravité du visualisateur
-        // valence faible = barres basses concentrées, valence haute = barres étalées
-        const spread    = 0.5 + valence * 0.5; // 0.5..1.0
-        const adjBellStr = bellStr / spread;   // plus valence est haute, plus c'est étalé
-
-        for (let b = 0; b < this.numBars; b++) {
-            // Oscillation lente propre à chaque barre, calée sur le BPM
-            this.barPhases[b] += bpmDrift * (0.6 + b * 0.08);
-            const driftValue = 1 - drift * 0.5 + drift * 0.5 * Math.sin(this.barPhases[b]);
-
-            // Courbe de cloche avec spread ajusté par la valence
-            const dist        = Math.abs(b - center) / center;
-            const bellProfile = Math.exp(-dist * dist * adjBellStr);
-
-            // Profil harmonique de l'accord (1.0 si pas d'accord disponible)
-            const chordMod = this._lastChordProfile ? this._lastChordProfile[b] : 1.0;
-
-            // Bruit réduit : le hasard reste mais ne domine plus
-            const randomNoise = 1 - noise * 0.5 + Math.random() * noise;
-
-            const target = Phaser.Math.Clamp(
-                this.beatFallbackLevel
-                    * bellProfile
-                    * driftValue
-                    * chordMod
-                    * this._phraseEnvelope
-                    * randomNoise
-                + minLevel,
-                0, 1
-            );
-
-            const prev  = this.currentLevels[b];
-            const alpha = target > prev ? this.smoothingUp : this.smoothingDown;
-            this.currentLevels[b] = prev + (target - prev) * alpha;
-            //console.log(`prev : ${prev} target : ${target} alpha : ${alpha}`);
-        }
-    }
-
-    // ── Rendu ───────────────────────────────────────────────────────────────
-
-    /**
-     * À appeler dans update() de GameScene.
-     * @param {Player} taPlayer - instance TextAlive (pour le fallback beat)
-     */
-    update(taPlayer) {
-        // Connexion paresseuse : retente si pas encore connecté
-        if (!this.connected && !this.corsBlocked) {
-            this.tryConnect();
-        }
-
-        this._readBeatFallbackLevels(taPlayer);
         this._draw();
     }
 
+    // Synthesises a convincing EQ shape from TextAlive song-map signals.
+    // The key design rule: each spectral region has its OWN peak driven by its OWN signal.
+    // Additive global floors (the old approach) raise ALL bars uniformly, killing valleys.
+    // Here, bars between peaks stay near restLevel because only nearby peaks contribute.
+    // Shimmer is multiplicative so it animates peaks without lifting the troughs.
+    _readTextAliveSignals(taPlayer, positionMs) {
+        const cfg = gameSettings.visualizer;
+        const vocal     = this._readVocalLevel(taPlayer, positionMs);
+        const beat      = this._readBeatPulse(taPlayer, positionMs);
+        const chorus    = this._readChorusLevel(taPlayer, positionMs);
+        const va        = this._readValenceArousal(taPlayer, positionMs);
+        const arousal   = va ? this._clamp((va.a + 1) * 0.5, 0, 1) : 0.5;
+        const valence   = va ? this._clamp((va.v + 1) * 0.5, 0, 1) : 0.5;
+        const chordHash = this._readChordHash(taPlayer, positionMs);
+        const timeSec   = positionMs / 1000;
+        // Chorus boosts all peak amplitudes slightly during the hook
+        const chorusMult = 1 + chorus * cfg.chorusBoost;
+
+        // Six spectral peaks, each anchored to a frequency band and driven by its own signal.
+        // Centers drift slowly so the EQ stays alive on held notes and reacts to chord changes.
+        const peaks = [
+            // Sub-bass: sharp beat impulse at the far left
+            {
+                center: 0.06 + chordHash * 0.03,
+                width:  0.055,
+                amp:    beat * 0.90 * chorusMult,
+            },
+            // Bass: beat body + vocal low-end; slides left/right with chord
+            {
+                center: this._clamp(0.17 + (chordHash - 0.5) * 0.09 + Math.sin(timeSec * 0.28) * 0.025, 0.08, 0.28),
+                width:  0.070,
+                amp:    (beat * 0.65 + vocal * 0.38) * chorusMult,
+            },
+            // Vocal formant: dominant mid-low peak; chord shifts its position like a vowel resonance
+            {
+                center: this._clamp(0.35 + (chordHash - 0.5) * 0.22 + Math.sin(timeSec * cfg.formantDrift) * 0.055, 0.18, 0.58),
+                width:  0.075 + arousal * 0.030,
+                amp:    vocal * 0.90 * chorusMult,
+            },
+            // Mid: arousal-driven; counter-drifts so it stays separated from the formant
+            {
+                center: this._clamp(0.54 + (0.5 - chordHash) * 0.14 + Math.sin(timeSec * cfg.formantDrift * 1.4 + 1.1) * 0.04, 0.36, 0.70),
+                width:  0.065,
+                amp:    (vocal * 0.50 + arousal * 0.55) * chorusMult,
+            },
+            // Upper harmonic: chord-derived interval above the formant; valence tints the position
+            {
+                center: this._clamp(0.62 + chordHash * 0.18 + valence * 0.09, 0.55, 0.88),
+                width:  0.060,
+                amp:    (arousal * 0.65 + vocal * 0.28) * 0.85 * chorusMult,
+            },
+            // Air / presence: high-frequency shimmer; always somewhat active when arousal is high
+            {
+                center: this._clamp(0.83 + Math.sin(timeSec * 0.65) * 0.04, 0.74, 0.92),
+                width:  0.065,
+                amp:    (arousal * 0.50 + vocal * 0.15) * 0.70 * chorusMult,
+            },
+        ];
+
+        for (let b = 0; b < cfg.numBars; b++) {
+            const normX = cfg.numBars === 1 ? 0.5 : b / (cfg.numBars - 1);
+
+            // Sum all peaks — because each is narrow, bars between peaks stay near restLevel
+            let energy = cfg.restLevel;
+            for (const p of peaks) {
+                const dist = (normX - p.center) / p.width;
+                energy += p.amp * Math.exp(-dist * dist * cfg.peakSharpness);
+            }
+
+            // Shimmer multiplies existing energy — animates peaks without raising valleys
+            const shimmer    = 0.5 + 0.5 * Math.sin(timeSec * (1.8 + normX * 2.4) + this.bandPhase[b] + chordHash * Math.PI * 2);
+            const ripple     = 0.5 + 0.5 * Math.sin(timeSec * (4.2 + arousal * 1.3) - normX * 9.5 + valence * Math.PI * 2);
+            energy *= 1 + cfg.shimmerAmount * (shimmer * 0.7 + ripple * 0.3 - 0.5);
+
+            const target = this._clamp(this._softGate(energy * cfg.gain, cfg.noiseGate), 0, 1);
+            const alpha  = target > this.levels[b] ? cfg.smoothingUp : cfg.smoothingDown;
+            this.levels[b] += (target - this.levels[b]) * alpha;
+        }
+
+        // 5-tap spatial blur: rounds off sharp valley edges between peaks.
+        // Peaks are self-reinforcing (neighbors are also elevated), so they stay tall;
+        // valleys get lifted by the spill from adjacent peaks, making transitions gradual.
+        const raw = this._scratch;
+        raw.set(this.levels);
+        for (let b = 0; b < cfg.numBars; b++) {
+            const c  = raw[b];
+            const l1 = b > 0               ? raw[b - 1] : c;
+            const l2 = b > 1               ? raw[b - 2] : l1;
+            const r1 = b < cfg.numBars - 1 ? raw[b + 1] : c;
+            const r2 = b < cfg.numBars - 2 ? raw[b + 2] : r1;
+            this.levels[b] = c * 0.40 + (l1 + r1) * 0.20 + (l2 + r2) * 0.10;
+        }
+    }
+
+    // Returns vocal amplitude normalised to [0,1].
+    // Prefers getMaxVocalAmplitude() for exact normalisation; falls back to a slow
+    // peak-follower so the signal stays well-scaled even if the API doesn't expose the max.
+    _readVocalLevel(taPlayer, positionMs) {
+        if (!taPlayer || typeof taPlayer.getVocalAmplitude !== "function") return 0;
+
+        let raw = 0;
+        try {
+            raw = taPlayer.getVocalAmplitude(positionMs) || 0;
+        } catch (_) {
+            return 0;
+        }
+
+        if (!this._maxVocalAmplitude && typeof taPlayer.getMaxVocalAmplitude === "function") {
+            try {
+                this._maxVocalAmplitude = taPlayer.getMaxVocalAmplitude() || 0;
+            } catch (_) {
+                this._maxVocalAmplitude = 0;
+            }
+        }
+
+        if (this._maxVocalAmplitude > 0)
+            return this._clamp(raw / this._maxVocalAmplitude, 0, 1);
+
+        // Fast attack (0.08), slow release (0.004) keeps the peak just above the signal
+        const peakAlpha = raw > this._vocalPeak ? 0.08 : 0.004;
+        this._vocalPeak += (raw - this._vocalPeak) * peakAlpha;
+        return this._clamp(raw / Math.max(this._vocalPeak, 0.001), 0, 1);
+    }
+
+    // Sharp pulse [0,1] that decays from 1 at each beat onset to 0 by the next beat.
+    // beatSharpness controls the decay curve — higher = more percussive transient spike.
+    // Downbeats (position 0 or 1 within the bar) get a slight amplitude boost.
+    _readBeatPulse(taPlayer, positionMs) {
+        if (!taPlayer || typeof taPlayer.findBeat !== "function") return 0;
+
+        try {
+            const beat = taPlayer.findBeat(positionMs);
+            if (!beat) return 0;
+
+            const progress = typeof beat.progress === "function"
+                ? beat.progress(positionMs)
+                : (positionMs - beat.startTime) / Math.max(beat.duration || 1, 1);
+            const downbeatBoost = beat.position <= 1 ? 1.15 : 0.9;
+            const pulse = Math.pow(1 - this._clamp(progress, 0, 1), gameSettings.visualizer.beatSharpness);
+            return this._clamp(pulse * downbeatBoost, 0, 1);
+        } catch (_) {
+            return 0;
+        }
+    }
+
+    // Returns a sustained level [0.5,1] inside a chorus section, 0 otherwise.
+    // A sine envelope on the chorus progress gives a smooth fade-in and fade-out
+    // so the energy boost doesn't snap on/off at the section boundary.
+    _readChorusLevel(taPlayer, positionMs) {
+        if (!taPlayer || typeof taPlayer.findChorus !== "function") return 0;
+
+        try {
+            const chorus = taPlayer.findChorus(positionMs);
+            if (!chorus) return 0;
+
+            const progress = typeof chorus.progress === "function"
+                ? this._clamp(chorus.progress(positionMs), 0, 1)
+                : 0.5;
+            return 0.75 + Math.sin(progress * Math.PI) * 0.25;
+        } catch (_) {
+            return 0;
+        }
+    }
+
+    // Valence (v): −1 = negative/sad → +1 = positive/joyful
+    // Arousal (a): −1 = calm/sleepy  → +1 = energetic/tense
+    // Both axes are remapped from [-1,1] to [0,1] by the caller before use.
+    _readValenceArousal(taPlayer, positionMs) {
+        if (!taPlayer || typeof taPlayer.getValenceArousal !== "function") return null;
+
+        try {
+            const va = taPlayer.getValenceArousal(positionMs);
+            if (!va || !Number.isFinite(va.a) || !Number.isFinite(va.v)) return null;
+            return va;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    // Hashes the current chord name to a stable [0,1] value so the same chord always
+    // produces the same formant/harmonic positions — giving the EQ a consistent spectral
+    // "colour" per chord. Keeps the previous hash when no new chord is detected to avoid jumps.
+    _readChordHash(taPlayer, positionMs) {
+        if (!taPlayer || typeof taPlayer.findChord !== "function") return this._lastChordHash;
+
+        try {
+            const chord = taPlayer.findChord(positionMs);
+            const name = chord?.name || "";
+            if (name && name !== this._lastChordName) {
+                this._lastChordName = name;
+                this._lastChordHash = this._hashUnit(name);
+            }
+        } catch (_) {
+            // Keep the previous chord color so the visualizer does not jump.
+        }
+
+        return this._lastChordHash;
+    }
+
+    // FNV-1a 32-bit hash normalised to [0,1]. Good bit-avalanche for short strings
+    // means chord names that differ by one character map to very different positions.
+    _hashUnit(text) {
+        let hash = 2166136261;
+        for (let i = 0; i < text.length; i++) {
+            hash ^= text.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
+        }
+        return ((hash >>> 0) % 10000) / 10000;
+    }
+
+    _clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+    }
+
+    // Noise gate with a smooth linear ramp: below threshold → 0, above → rescaled to [0,1].
+    // Avoids the hard click of a traditional gate while still hiding idle-state noise.
+    _softGate(value, threshold) {
+        if (value <= threshold) return 0;
+        return (value - threshold) / (1 - threshold);
+    }
+
+    _wrap01(value) {
+        return value - Math.floor(value);
+    }
+
     _draw() {
+        const cfg = gameSettings.visualizer;
         this.graphics.clear();
 
-        const segH  = Math.max(1, Math.floor((this.maxHeight - this.segmentGap * this.numSegments) / this.numSegments));
-        const stepX = this.barWidth + this.barGap;
+        const sceneW = this.scene.scale.width;
+        const sceneH = this.scene.scale.height;
 
-        for (let b = 0; b < this.numBars; b++) {
-            const level      = this.currentLevels[b];
-            const activeSegs = Math.round(level * this.numSegments);
-            const barX       = this.x + b * stepX;
+        // Bars fill 90% of screen width, centered
+        const totalW = sceneW * 0.90;
+        const stepX  = totalW / cfg.numBars;
+        const barW   = Math.max(2, stepX * cfg.barWidthRatio);
+        const startX = (sceneW - totalW) / 2 + cfg.xOffset;
 
-            // ── Barres principales (du bas vers le haut) ─────────────────────
+        // Each half uses at most 44% of screen height so bars never clip off-screen
+        const maxHalfH = sceneH * 0.44;
+        const segH = Math.max(2, Math.floor((maxHalfH - cfg.segmentGap * cfg.numSegments) / cfg.numSegments));
+
+        for (let b = 0; b < cfg.numBars; b++) {
+            const barX = startX + b * stepX;
+
+            // Smoothstep pinch: edge bars are shorter, not dimmer : avoids the cropped look
+            // when high-energy frequencies land on the sides.
+            // edgeT must be clamped to [0,1] before the smoothstep : outside that range
+            // t*(t*(3-2*t)) goes negative, making activeSegs negative and all bars invisible.
+            const normX      = b / (cfg.numBars - 1);
+            const edgeT      = Math.min(1, Math.min(normX, 1 - normX) / cfg.edgeFadeWidth);
+            const heightMult = edgeT * edgeT * (3 - 2 * edgeT); // smoothstep, safe on [0,1]
+            const activeSegs = Math.round(this.levels[b] * cfg.numSegments * heightMult);
+
+            // Bars growing upward from center
             for (let s = 0; s < activeSegs; s++) {
-                const segY = this.y - (s + 1) * (segH + this.segmentGap);
+                const segY = this.y - (s + 1) * (segH + cfg.segmentGap);
                 this.graphics.fillStyle(this.segmentColors[s], 1);
-                this.graphics.fillRect(barX, segY, this.barWidth, segH);
+                this.graphics.fillRect(barX, segY, barW, segH);
             }
 
-            // ── Reflet en dessous de la ligne de base ─────────────────────────
-            const refSegs = Math.min(activeSegs, this.reflectionSegments);
-            for (let s = 0; s < refSegs; s++) {
-                const segY  = this.y + s * (segH + this.segmentGap) + this.segmentGap;
-                const alpha = this.reflectionAlpha * (1 - s / this.reflectionSegments);
-                this.graphics.fillStyle(this.segmentColors[s], alpha);
-                this.graphics.fillRect(barX, segY, this.barWidth, segH);
+            // Mirror grows downward with one fewer bar so the axis sits at the midpoint
+            // of the first upward segment rather than doubling it.
+            const mirrorSegs = Math.max(0, activeSegs - 1);
+            for (let s = 0; s < mirrorSegs; s++) {
+                const segY = this.y + s * (segH + cfg.segmentGap);
+                this.graphics.fillStyle(this.segmentColors[s], 1);
+                this.graphics.fillRect(barX, segY, barW, segH);
             }
         }
     }
 
-    // ── Utilitaires ─────────────────────────────────────────────────────────
-
-    /**
-     * Précalcule les couleurs des segments : vert (#00cc00) → jaune → rouge (#cc0000).
-     */
     _buildGradient() {
-        const stops       = gameSettings.visualizer.gradientStops;
-        const redThreshold = gameSettings.visualizer.redThreshold ?? 0.5;
-
-        const colors = [];
-
-        for (let i = 0; i < this.numSegments; i++) {
-            // t normalisé : 0 = bas, 1 = haut — mais compressé par redThreshold
-            const t = Math.min(1, (i / (this.numSegments - 1)) / redThreshold);
-
-            // Interpolation entre les stops
-            const scaledT  = t * (stops.length - 1);
-            const stopIdx  = Math.min(Math.floor(scaledT), stops.length - 2);
-            const frac     = scaledT - stopIdx;
-
-            const a = stops[stopIdx];
-            const b = stops[stopIdx + 1];
-
-            const r = Math.round(a.r + (b.r - a.r) * frac);
-            const g = Math.round(a.g + (b.g - a.g) * frac);
-            const bv = Math.round(a.b + (b.b - a.b) * frac);
-
-            colors.push((r << 16) | (g << 8) | bv);
-        }
-
-        return colors;
-    }
-
-    destroy() {
-        this.graphics.destroy();
-        if (this.audioContext) this.audioContext.close();
-    }
-
-    enable(duration = 500) {
-        if (this.enabled) return;
-        this.segmentColors = this._buildGradient();
-        this.enabled = true;
-        this.graphics.setAlpha(0);
-        this.scene.tweens.add({
-            targets: this.graphics,
-            alpha: 1,
-            duration: duration,
-            ease: 'Quad.easeIn'
+        const stops = gameSettings.visualizer.gradientStops;
+        const n = gameSettings.visualizer.numSegments;
+        return Array.from({ length: n }, (_, i) => {
+            const t = (i / (n - 1)) * (stops.length - 1);
+            const idx = Math.min(Math.floor(t), stops.length - 2);
+            const f = t - idx;
+            const a = stops[idx], b = stops[idx + 1];
+            return (Math.round(a.r + (b.r - a.r) * f) << 16)
+                 | (Math.round(a.g + (b.g - a.g) * f) << 8)
+                 |  Math.round(a.b + (b.b - a.b) * f);
         });
     }
 
-    disable(duration = 500) {
-        if (!this.enabled) return;
-        this.enabled = false;
-        this.graphics.setAlpha(1);
-        this.scene.tweens.add({
-            targets: this.graphics,
-            alpha: 0,
-            duration: duration,
-            ease: 'Quad.easeOut'
-        });
-    }
 }
 
-class LoadScene extends Phaser.Scene {
-    constructor() { super("LoadScene"); }
-    create() {
-        const cx = this.scale.width / 2;
-        const cy = this.scale.height / 2;
-        this.spinner = this.add.graphics({ x: cx, y: cy });
-        this.spinner.lineStyle(gameSettings.spinner.thickness, gameSettings.colors.primary, 1);
-        this.spinner.beginPath();
-        this.spinner.arc(0, 0, gameSettings.spinner.radius, 0, Math.PI * 1.5, false);
-        this.spinner.strokePath();
+class BootScene extends Phaser.Scene {
+    constructor() { super("BootScene"); }
+
+    preload() {
+        this.load.image("miku_standing", "media/Miku_standing.png");
+        this.load.image("miku_knocking", "media/Miku_knocking.png");
     }
-    update() {
-        this.spinner.rotation += gameSettings.spinner.rotationSpeed;
-        if (isTextAliveReady) this.scene.start("TitleScene");
+
+    create() {
+        this.scene.start("TitleScene");
     }
 }
 
 class TitleScene extends Phaser.Scene {
     constructor() { super("TitleScene"); }
+
     create() {
         const cx = this.scale.width / 2;
         const cy = this.scale.height / 2;
-        const playButtonBg = this.add.rectangle(cx, cy, gameSettings.button.width, gameSettings.button.height, gameSettings.colors.primary);
-        playButtonBg.setInteractive({ useHandCursor: true });
-        this.add.text(cx, cy, "PLAY", {
+        this.introStarted = false;
+        this.loaded = false;
+        this.spinnerActive = true;
+
+        // Solid dark background
+        this.add.rectangle(cx, cy, this.scale.width, this.scale.height, 0x111111);
+
+        // Star field (drawn each frame via update)
+        this._buildStars(50);
+
+        // Soft purple glow behind title area
+        const glow = this.add.graphics();
+        glow.fillStyle(0x999999, 0.07);
+        glow.fillCircle(cx, cy - 120, 220);
+
+        // Song title : large, shown during loading (may be empty until TextAlive resolves)
+        this.titleText = this.add.text(cx, cy - 120, getSongTitle(), {
+            fontFamily: gameSettings.fonts.main,
+            fontSize: "72px",
+            color: gameSettings.colors.textLight,
+            fontStyle: "bold",
+            stroke: "#000000",
+            strokeThickness: 8,
+            align: "center",
+            wordWrap: { width: Math.min(this.scale.width * 0.85, 900), useAdvancedWrap: true }
+        }).setOrigin(0.5);
+
+        // Loading spinner
+        this.spinner = this.add.graphics({ x: cx, y: cy + 50 });
+        this.spinner.lineStyle(gameSettings.spinner.thickness, gameSettings.colors.primary, 1);
+        this.spinner.beginPath();
+        this.spinner.arc(0, 0, gameSettings.spinner.radius, 0, Math.PI * 1.5, false);
+        this.spinner.strokePath();
+
+        // Play button : invisible until loading finishes
+        this.playButtonBg = this.add.rectangle(cx, cy + 50, gameSettings.button.width, gameSettings.button.height, gameSettings.colors.primary);
+        this.playButtonBg.setAlpha(0);
+        this.playButtonText = this.add.text(cx, cy + 50, "PLAY", {
             fontFamily: gameSettings.fonts.ui,
             fontSize: gameSettings.button.fontSize,
             color: gameSettings.colors.textLight,
             fontStyle: "bold"
+        }).setOrigin(0.5).setAlpha(0);
+        this.playButtonCaption = this.add.text(cx, cy + 50 + gameSettings.button.height / 2 + 12, 'スタート', {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "16px",
+            color: "#AAAAAA",
+        }).setOrigin(0.5).setAlpha(0);
+
+        this.playButtonBg.on('pointerover', () => {
+            if (!this.introStarted) this.playButtonBg.fillColor = gameSettings.colors.primaryHover;
+        });
+        this.playButtonBg.on('pointerout', () => {
+            if (!this.introStarted) this.playButtonBg.fillColor = gameSettings.colors.primary;
+        });
+        this.playButtonBg.on('pointerdown', () => this.startIntro());
+
+        // Hard Mode toggle 
+        this._buildHardModeToggle();
+        // Low Power toggle
+        this._buildLowPowerToggle();
+    }
+
+    _buildStars(count) {
+        this.starData = [];
+        for (let i = 0; i < count; i++) {
+            this.starData.push({
+                x: Math.random() * this.scale.width,
+                y: Math.random() * this.scale.height,
+                r: 1 + Math.random() * 2,
+                phase: Math.random() * Math.PI * 2,
+                speed: 0.0008 + Math.random() * 0.0015,
+            });
+        }
+        this.starGraphics = this.add.graphics();
+    }
+
+    _buildHardModeToggle() {
+        const padX = 14, padY = 14;
+        const btnW = 152, btnH = 38;
+        const descH = 28;
+        const bx = this.scale.width - padX - btnW / 2;
+        // Sit above the low-power widget (which occupies descH + 4 + btnH above the bottom padding)
+        const lpWidgetH = descH + 4 + btnH;
+        const by = this.scale.height - padY - btnH / 2 - lpWidgetH - 8;
+
+        this.add.text(bx, by - btnH / 2 - descH / 2 - 4, 'ハードモード  Disables click helper', {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "12px",
+            color: "#555555",
         }).setOrigin(0.5);
-        playButtonBg.on('pointerover', () => { playButtonBg.fillColor = gameSettings.colors.primaryHover; });
-        playButtonBg.on('pointerout', () => { playButtonBg.fillColor = gameSettings.colors.primary; });
-        playButtonBg.on('pointerdown', () => { taPlayer.requestPlay(); this.scene.start("GameScene"); });
+
+        this.hmBg = this.add.rectangle(bx, by, btnW, btnH, 0x1e1e1e).setAlpha(0.9);
+        this.hmBg.setStrokeStyle(1, 0x444444);
+        this.hmText = this.add.text(bx, by, 'Hard Mode', {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "16px",
+            color: "#777777",
+        }).setOrigin(0.5);
+        this.hmBg.setInteractive({ useHandCursor: true });
+        this.hmBg.on('pointerdown', () => this._toggleHardMode());
+    }
+
+    _toggleHardMode() {
+        hardMode = !hardMode;
+        this.hmText.setText(hardMode ? 'Hard Mode: ON' : 'Hard Mode');
+        this.hmText.setColor(hardMode ? '#8A2BE2' : '#777777');
+        this.hmBg.fillColor = hardMode ? 0x2a1060 : 0x1e1e1e;
+    }
+
+    _buildLowPowerToggle() {
+        const padX = 14, padY = 14;
+        const btnW = 152, btnH = 38;
+        const descH = 28; // height reserved for the description line above the button
+        const bx = this.scale.width - padX - btnW / 2;
+        const by = this.scale.height - padY - btnH / 2;
+
+        // Description label above the button
+        this.add.text(bx, by - btnH / 2 - descH / 2 - 4, '省電力モード  Disables all particle effects', {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "12px",
+            color: "#555555",
+        }).setOrigin(0.5);
+
+        this.lpBg = this.add.rectangle(bx, by, btnW, btnH, 0x1e1e1e).setAlpha(0.9);
+        this.lpBg.setStrokeStyle(1, 0x444444);
+        this.lpText = this.add.text(bx, by, 'Low Power', {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "16px",
+            color: "#777777",
+        }).setOrigin(0.5);
+        this.lpBg.setInteractive({ useHandCursor: true });
+        this.lpBg.on('pointerdown', () => this._toggleLowPower());
+    }
+
+    _toggleLowPower() {
+        lowPowerMode = !lowPowerMode;
+        gameSettings.globalParticleToggle = !lowPowerMode;
+        this.lpText.setText(lowPowerMode ? 'Low Power: ON' : 'Low Power');
+        this.lpText.setColor(lowPowerMode ? '#8A2BE2' : '#777777');
+        this.lpBg.fillColor = lowPowerMode ? 0x2a1060 : 0x1e1e1e;
+        if (lowPowerMode) this.starGraphics.clear();
+    }
+
+    update(time) {
+        if (this.spinnerActive) {
+            this.spinner.rotation += gameSettings.spinner.rotationSpeed;
+        }
+        if (!lowPowerMode && this.starGraphics) {
+            this.starGraphics.clear();
+            for (const s of this.starData) {
+                const alpha = 0.15 + 0.75 * (0.5 + 0.5 * Math.sin(s.phase + time * s.speed));
+                this.starGraphics.fillStyle(0xffffff, alpha);
+                this.starGraphics.fillCircle(s.x, s.y, s.r);
+            }
+        }
+        if (!this.loaded && isTextAliveReady && isIntroVideoReady) {
+            this.loaded = true;
+            this._onLoadComplete();
+        }
+    }
+
+    _onLoadComplete() {
+        this.titleText.setText(getSongTitle());
+        this.tweens.add({ targets: [this.spinner], alpha: 0, duration: 500 });
+        this.tweens.add({
+            targets: [this.playButtonBg, this.playButtonText, this.playButtonCaption],
+            alpha: 1,
+            duration: 600,
+            delay: 200,
+            onComplete: () => {
+                this.spinnerActive = false;
+                this.playButtonBg.setInteractive({ useHandCursor: true });
+            }
+        });
+    }
+
+    startIntro() {
+        if (this.introStarted) return;
+        this.introStarted = true;
+        this.gameStarted = false;
+        this.playButtonBg.disableInteractive();
+        this.playButtonBg.fillColor = gameSettings.colors.primaryHover;
+        this.playButtonBg.setAlpha(0.65);
+        this.playButtonText.setAlpha(0.65);
+        playIntroVideo(
+            () => this.scene.stop("TitleScene"),   // video ended: clean up this scene
+            () => this.resetPlayButton(),            // playback blocked: reset UI
+            () => {                                  // fade begins: launch game behind video
+                this.gameStarted = true;
+                taPlayer.requestPlay();
+                this.scene.launch("GameScene");
+            }
+        );
+    }
+
+    resetPlayButton() {
+        if (this.gameStarted) {
+            this.scene.stop("GameScene");
+            this.gameStarted = false;
+        }
+        this.introStarted = false;
+        this.playButtonBg.setInteractive({ useHandCursor: true });
+        this.playButtonBg.fillColor = gameSettings.colors.primary;
+        this.playButtonBg.setAlpha(1);
+        this.playButtonText.setAlpha(1);
     }
 }
 
@@ -1094,153 +1907,251 @@ class GameScene extends Phaser.Scene {
         this.catcher = new Catcher(this, this.scale.height / 2);
         this.waveState = new WaveState();
 
-        this.musicalBackdrop = new MusicalBackdrop(this);
-
         this.comboCounter = new ComboCounter(this);
 
         this.charGroup = this.physics.add.group();
         this.physics.add.overlap(this.catcher.sprite, this.charGroup, this.catchChar, null, this);
 
-        this.cursors = this.input.keyboard.on('keydown-SPACE', () => {
+        this.input.keyboard.on('keydown-SPACE', () => {
+            this.catcher.toggleDirection();
+        }, this);
+        this.input.on('pointerdown', () => {
             this.catcher.toggleDirection();
         }, this);
         this.activeChars = [];
         this.pendingChars = [];
-        this.lastCharStartTime = 0; // used to ensure minimum gap between chars
+        this.disintegratingChars = []; // characters currently dissolving through the catcher mask
         this.dyingStrips = [];
+        this.lastBeatIndex = -1;
         this.fallDistance = (this.scale.width + gameSettings.lyrics.startXOffset) - this.catcher.x;
         this.charSize = parseInt(gameSettings.lyrics.fontSize);
+        this.lastSpawnedY = null;
 
-        this.activeBGChar = null;
-        this.bgCharEndTime = 0;
-        this.bgCharColorIndex = 0;
+        this.backgroundChar = new BackgroundChar(this, taPlayer);
+        this.time.addEvent({ delay: 500, callback: () => this.backgroundChar.clear() });
 
         this.charSpawnYPointer = new CharSpawnYPointer(
             this.scale.height / 2
         );
 
-        this.spawnPointerGraphics = this.add.graphics();
-        this.spawnPointerGraphics.fillStyle(gameSettings.colors.pointer, 1);
-        this.spawnPointerGraphics.fillCircle(0, 0, 10);
-        this.spawnPointerGraphics.setDepth(1);
-        this.spawnPointerGraphics.x = this.scale.width - 50;
-        this.spawnPointerGraphics.y = this.charSpawnYPointer.y;
+        if (taPlayer && taPlayer.video) {
+            this.loadLyrics(taPlayer.video.firstChar);
+            taPlayer.volume = gameSettings.songVolume;
+        }
 
-        this.activeCatchParticles = [];
+        this.fpsText = this.add.text(10, 10, "FPS: 0", {
+            fontFamily: gameSettings.fonts.ui,
+            fontSize: "24px",
+            color: gameSettings.colors.textMain,
+            stroke: "#000000",
+            strokeThickness: 3
+        }).setOrigin(0, 0).setDepth(1000);
 
-        if (taPlayer && taPlayer.video) this.loadLyrics(taPlayer.video.firstChar);
+        this.FLBackground = new FLTimelineBackground(this, this.scale.width, this.scale.height);
+        this.FLBackground.setDepth(-10000);
 
-        // Create the background char that gets updated when you catch one
-        this.activeBGChar = this.add.text(this.scale.width / 2, this.scale.height / 2, "", {
-            fontFamily: gameSettings.fonts.main,
-            fontSize: gameSettings.backgroundLyrics.fontSize,
-            color: gameSettings.backgroundLyrics.colors[this.bgCharColorIndex]
-        }).setOrigin(0.5).setAlpha(0).setDepth(-1);
-
-        const particleGraphics = this.make.graphics({ x: 0, y: 0, add: false });
-        particleGraphics.fillStyle(0xffffff, 1);
-        particleGraphics.fillRect(0, 0, 8, 8);
-        particleGraphics.generateTexture("particle", 8, 8);
-        particleGraphics.destroy();
-
-        this.scale.on('resize', (gameSize) => {
-            this.comboCounter.resize(gameSize.height);
-        });
-
-        const vizCfg = gameSettings.visualizer;
-        this.visualizer = new MusicVisualizer(this, {
-            ...vizCfg,
-            // Position : centré horizontalement, ligne de base en bas de l'écran
-            x: (this.scale.width - (vizCfg.numBars * (vizCfg.barWidth + vizCfg.barGap))) / 2,
-            y: this.scale.height - 20
-        });
+        this.visualizer = new MusicVisualizer(this, this.scale.height / 2);
 
         this.lyricsDelay = gameSettings.lyrics.lyricsDelay;
     }
 
     update(time, delta) {
-        delta = delta / 1000;
+        this.fpsText.setText("FPS: " + Math.round(this.game.loop.actualFps));
+
+        // Cap delta to 100 ms (â‰ˆ 10 fps minimum) so a tab-unfocus spike can't throw the
+        // spawn pointer or catcher to an extreme position on the first resumed frame.
+        const deltaMs = Math.min(delta, 100);
+        const deltaSec = deltaMs / 1000;
         const w = this.scale.width;
         const h = this.scale.height;
 
-        // Activate/deactivate the music visualizer when it is needed
-        this.visualizer.update(taPlayer);
-        if (this.pendingChars.length > 0 && taPlayer?.isPlaying){
-            const delayBeforeNextChar = this.pendingChars[0].startTime - taPlayer.timer.position + gameSettings.lyrics.fallTimeMs;
-            if (!this.visualizer.enabled && this.activeChars.length == 0 && delayBeforeNextChar > gameSettings.visualizer.minDelayTrigger){
-                console.log("Enable visualizer");
-                this.visualizer.enable(1500);
-            }
-            else if (this.visualizer.enabled && delayBeforeNextChar < gameSettings.visualizer.minDelayTrigger){
-                console.log("Disable visualizer");
-                setTimeout(() => {
-                    this.visualizer.disable(1000);}, 
-                gameSettings.visualizer.minDelayTrigger / 3);
-            }
-        }
-        else{
-            this.visualizer.enabled = false;
-        }
+        if (!taPlayer) return;
 
-        if (!taPlayer || !taPlayer.isPlaying) return;
-        const songTime = taPlayer.timer.position;
+        if (!taPlayer.isPlaying) return;
+        const songTime = taPlayer.timer?.position ?? 0;
         const startX = w + gameSettings.lyrics.startXOffset;
 
-        this.catcher.update(delta, h);
-        this.spawnPointerGraphics.y = this.charSpawnYPointer.y;
-        this.charSpawnYPointer.update(delta, h);
+        this.visualizer.update(taPlayer, this.activeChars.length > 0);
+
+        this.FLBackground.update(songTime, startX, this.catcher.x, this.fallTime);
+        this.catcher.update(deltaSec, h);
+        this.charSpawnYPointer.update(deltaSec, h);
         this.spawnPendingChars(songTime, startX, w, h);
-        this.updateActiveChars(songTime, startX, delta);
-        this.destroyStrips(delta);
-        this.updateBGChar();
-        this.manageMusicalBackdrop(songTime, delta, w, h);
-        this.updateCatchParticles();
+        this.updateActiveChars(songTime, startX, deltaSec);
+        this.updateDisintegratingChars(deltaMs);
+        this.destroyStrips(deltaMs);
+        this.backgroundChar.update(songTime, deltaMs);
+
+        const beat = taPlayer.findBeat?.(songTime);
+        if (beat && beat.index !== this.lastBeatIndex) {
+            this.lastBeatIndex = beat.index;
+            if (!lowPowerMode) {
+                this.triggerBeatPinch();
+                this.catcher.triggerBeatBob();
+            }
+        }
     }
 
-    manageMusicalBackdrop(time, delta, sceneWidth, sceneHeight) {
-        if (!taPlayer || !taPlayer.isPlaying) return;
+    triggerBeatPinch() {
+        const targets = [];
+        for (const ac of this.activeChars) {
+            if (ac.barrelFX) targets.push(ac.barrelFX);
+        }
+        if (targets.length === 0) return;
+        const cfg = gameSettings.beatPinch;
+        this.tweens.add({
+            targets,
+            amount: cfg.amount,
+            duration: cfg.duration,
+            yoyo: true,
+            ease: cfg.ease,
+        });
+    }
 
-        // Check if we should enable the chord backdrop based on the next pending character and the current song time
-        if (
-            this.pendingChars.length > 0
-            && (this.pendingChars[0].startTime - this.fallTime - time) > gameSettings.backdrop.minMusicalBackdropLenght
-            && !this.musicalBackdrop.enabled
-        ) {
-            this.musicalBackdrop.enable(time);
-            //console.log("Enabling chord backdrop");
-            this.time.delayedCall(time - this.pendingChars[0].startTime - this.fallTime - gameSettings.backdrop.musicalBackdropEndLeadTime, () => {
-                this.musicalBackdrop.disable(this.time.now);
-                //console.log("Disabling chord backdrop");
-            });
+    // Advances each caught character through its dissolve animation each frame
+    updateDisintegratingChars(delta) {
+        for (let i = this.disintegratingChars.length - 1; i >= 0; i--) {
+            const char = this.disintegratingChars[i];
+            if (char.updateDisintegration(this.catcher.x, delta)) {
+                this.disintegratingChars.splice(i, 1);
+            }
+        }
+    }
+
+    getCharColor(char) {
+        // Phrase sets the base color; word index within the phrase picks a brightness tint,
+        // so characters within the same phrase stay recognizably similar but are still distinguishable.
+        const word = char.parent;
+        const phrase = word?.parent;
+
+        if (!phrase) {
+            return gameSettings.colors.textMain;
         }
 
-        this.musicalBackdrop.update(time, delta, sceneWidth, sceneHeight);
+        const phraseIndex = taPlayer.video.phrases.indexOf(phrase);
+
+        const phraseColor =
+            gameSettings.phraseColors[phraseIndex % gameSettings.phraseColors.length];
+
+        const wordIndex = phrase.children.indexOf(word);
+
+
+        const tint =
+            gameSettings.tintCycle[wordIndex % gameSettings.tintCycle.length];
+
+        return tintColor(phraseColor, tint);
     }
 
     spawnPendingChars(time, startX, sceneWidth, sceneHeight) {
-        // Push characters whose start time has arrived from pendingChars -> activeChars
         while (this.pendingChars.length > 0) {
             const nextChar = this.pendingChars[0];
             const yPos = this.charSpawnYPointer.y;
+            let auraOnSpawn = false;
 
-            const effectiveStartTime = nextChar.startTime + this.lyricsDelay;
+            let effectiveStartTime = nextChar.startTime + this.lyricsDelay;
 
-            if (time >= Math.max(effectiveStartTime - this.fallTime, (this.lastCharStartTime + gameSettings.lyrics.minGapBetweenChars) - this.fallTime)) {
-                if (this.waveState.advance(time)) {
-                    this.charSpawnYPointer.flipDirection();
+            if (time >= effectiveStartTime - this.fallTime) {
+
+                // If songTime jumped ahead (tab unfocus, TextAlive timer drift, etc.) a character
+                // might be so late that it would already be at or past the catcher the moment it
+                // spawns. Spawning it would trigger the overlap-offset chain for every queued
+                // character and scatter them across the screen. Drop it silently instead. (was a weird bug encountered time to time)
+                const progress = (time - (nextChar.startTime - this.fallTime)) / this.fallTime;
+                if (progress >= 1 + this.destroyThreshold) {
+                    this.pendingChars.shift();
+                    continue;
                 }
 
-                const charObj = this.add.text(startX, this.charSpawnYPointer.y, nextChar.text, {
-                    fontFamily: gameSettings.fonts.main,
-                    fontSize: gameSettings.lyrics.fontSize,
-                    color: gameSettings.colors.textMain
-                }).setOrigin(0.5);
+                // check if wavestate changed direction
+                if (this.waveState.advance(time)) {
+                    this.charSpawnYPointer.flipDirection();
+                    auraOnSpawn = !hardMode;
+                }
+
+                let textToRender = nextChar.text;
+
+                let spawnX = startX;
+                let spawnY = this.charSpawnYPointer.y;
+
+                if (gameSettings.lyrics.trailingChars.includes(textToRender)) {
+                    spawnY = this.lastSpawnedY ?? spawnY;
+                    // Override effectiveStartTime so the char travels at normal speed (same startX,
+                    // same fallDistance) but arrives one preceding-char-width later than its host,
+                    // keeping a constant spatial gap regardless of unreliable TextAlive timestamps.
+                    const prevAc = this.activeChars[this.activeChars.length - 1];
+                    if (prevAc) {
+                        effectiveStartTime = prevAc.effectiveStartTime
+                            + Math.round(prevAc.obj.width * this.fallTime / this.fallDistance);
+                    }
+                } else if (gameSettings.lyrics.leadingChars.includes(textToRender)) {
+                    const nextPending = this.pendingChars[1];
+                    if (nextPending) {
+                        effectiveStartTime = (nextPending.startTime + this.lyricsDelay)
+                            - Math.round(this.charSize * this.fallTime / this.fallDistance);
+                    }
+                }
+
+                const charObj = this.add.text(
+                    spawnX,
+                    spawnY,
+                    textToRender,
+                    {
+                        fontFamily: getLyricFont(textToRender),
+                        fontSize: gameSettings.lyrics.fontSize,
+                        color: this.getCharColor(nextChar)
+                    }
+                ).setOrigin(0.5);
+
+                // For normal characters, shift vertically when they would overlap the previous one.
+                if (
+                    !gameSettings.lyrics.trailingChars.includes(textToRender) &&
+                    this.activeChars.length > 0
+                ) {
+                    const prev = this.activeChars[this.activeChars.length - 1];
+                    const prevProgress = (time - (prev.effectiveStartTime - this.fallTime)) / this.fallTime;
+                    const prevX = prev.startX - (prev.startX - this.catcher.x) * prevProgress;
+                    const gap = (startX - charObj.width * 0.5) - (prevX + prev.obj.width * 0.5);
+                    if (gap < gameSettings.lyrics.minCharSpacing) {
+                        spawnY = Phaser.Math.Clamp(
+                            spawnY + this.charSpawnYPointer.direction * gameSettings.lyrics.overlapYShift,
+                            gameSettings.lyrics.marginY,
+                            sceneHeight - gameSettings.lyrics.marginY
+                        );
+                        charObj.y = spawnY;
+                    }
+                }
+
+                this.lastSpawnedY = spawnY;
 
                 const stripLength = nextChar.endTime - nextChar.startTime - this.charSize;
 
                 this.charGroup.add(charObj);
-                this.lastCharStartTime = nextChar.startTime;
-                this.activeChars.push(new ActiveChar(this, nextChar, charObj, startX, yPos, stripLength, this.charSize / 5, this.charSpawnYPointer, effectiveStartTime));
+                charObj.body.setAllowGravity(false);
+                charObj.body.setSize(this.charSize, this.charSize, true);
+
+                const ac = new ActiveChar(
+                    this,
+                    nextChar,
+                    charObj,
+                    spawnX,
+                    spawnY,
+                    stripLength,
+                    this.charSize / 5,
+                    auraOnSpawn,
+                    effectiveStartTime
+                );
+                charObj.enableFilters();
+                ac.barrelFX = charObj.filters.internal.addBarrel(1.0);
+                this.activeChars.push(ac);
+
+                // Slow the spawn pointer while a long strip is live, then restore
+                if (stripLength >= gameSettings.lyrics.minDelayLongChar) {
+                    this.charSpawnYPointer.changeSpeed(gameSettings.catcher.slowedSpeed);
+                    this.time.delayedCall(stripLength, () => {
+                        this.charSpawnYPointer.changeSpeed(gameSettings.charSpawnYPointer.speed);
+                    });
+                }
+
                 this.pendingChars.shift();
             } else {
                 break;
@@ -1248,190 +2159,63 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    destroyStrips(delta) {
-        delta = delta * 1000;
+    destroyStrips(deltaMs) {
         for (let i = this.dyingStrips.length - 1; i >= 0; i--) {
             const item = this.dyingStrips[i];
-            if (item.strip.x > 0){
-                this.catcher.changeMaxSpeed(gameSettings.catcher.slowedSpeed);
-            }
 
-            item.progress += delta / item.stripDuration;
+            item.progress += deltaMs / item.stripDuration;
 
             const remainingWidth = item.maxWidth * (1 - item.progress);
             item.strip.setSize(Math.max(0, remainingWidth), item.strip.height);
 
             if (item.progress >= 1) {
                 item.strip.destroy();
-                item.obj.destroy();
+                // obj is null when the character was caught (disintegration owns its lifecycle)
+                if (item.obj) item.obj.destroy();
                 this.dyingStrips.splice(i, 1);
-                this.catcher.changeMaxSpeed(gameSettings.catcher.maxSpeed);
-                this.spawnCatchParticles();
             }
         }
+
+        // Slow the catcher while strips drain so the player can't rush to the next character
+        // while the current note is still "playing" : long held notes naturally create pacing gaps.
+        this.catcher.changeMaxSpeed(
+            this.dyingStrips.length > 0
+                ? gameSettings.catcher.slowedSpeed
+                : gameSettings.catcher.maxSpeed
+        );
     }
 
     updateActiveChars(time, startX, delta) {
         for (let i = this.activeChars.length - 1; i >= 0; i--) {
             const item = this.activeChars[i];
-            const shouldRemove = item.update(time, startX, this.catcher.x, this.fallTime, delta, this.destroyThreshold, this.fallDistance, this.charSize, this.dyingStrips);
+            const shouldRemove = item.update(time, this.catcher.x, this.fallTime, delta, this.destroyThreshold, this.fallDistance, this.charSize, this.dyingStrips);
             if (shouldRemove) {
                 this.activeChars.splice(i, 1);
-                this.comboCounter.reset();
+                this.comboCounter.miss();
             }
-        }
-    }
-
-    calcEndXPos(yPos, k){
-        // Gives x coordinate goal of a particle depending on y (relative to the catcher)
-        const y = yPos - this.catcher.y;
-
-        if (y < -k || y > k){
-            console.log(`Out of range particle : catcherY = ${this.catcher.y} y = ${y}`);
-            return null;
-        }
-
-        if (y < 0){
-            return y**2/k + 3*y + 2*k; //a*y**2/k + 2*a*y + a*k
-        }
-        else{
-            return y**2/k - 3*y + 2*k; 
-        }
-    }
-
-    calcPartSpeed(dist, k){
-        // Gives current speed of a particle depending on its distance from its goal
-        if (dist < 0 || dist > 2*k){
-            return 0;
-        }
-
-        const m = gameSettings.catchParticles.maxSpeed;
-        return (m*dist/(2*k));
-    }
-
-    spawnCatchParticles(){
-        const minY = this.catcher.y - gameSettings.catcher.height/2;
-        const maxY = this.catcher.y + gameSettings.catcher.height/2;
-        const mean = (minY + maxY) / 2;
-
-        const valenceArousal = taPlayer.getValenceArousal(taPlayer.timer.position);
-        let colors = [];
-        if (valenceArousal.a < gameSettings.catchParticles.arousalThresholds[0]){
-            colors = gameSettings.catchParticles.boringColors;
-        }
-        else if (valenceArousal.a < gameSettings.catchParticles.arousalThresholds[1]){
-            colors = gameSettings.catchParticles.mildColors;
-        }
-        else{
-            colors = gameSettings.catchParticles.excitingColors;
-        }
-
-        let effectSize = 0;
-        if (valenceArousal.v < gameSettings.catchParticles.arousalThresholds[0]){
-            effectSize = gameSettings.catchParticles.effectSizes[0];
-        }
-        else if (valenceArousal.v < gameSettings.catchParticles.arousalThresholds[1]){
-            effectSize = gameSettings.catchParticles.effectSizes[1];
-        }
-        else{
-            effectSize = gameSettings.catchParticles.effectSizes[2];
-        }
-
-        for (let i = gameSettings.catchParticles.quantity - 1; i >= 0; i--){
-            let particle = null;
-
-            const spawnX = gameSettings.catcher.xPos + gameSettings.catcher.width/2 + ((Math.random() - 0.3) * 30);
-            const spawnY = Math.random() * (maxY - minY) + minY;
-            const color = colors[Math.floor(Math.random() * colors.length)];
-            const alpha = Math.random() * (gameSettings.catchParticles.alpha.max - gameSettings.catchParticles.alpha.min) + gameSettings.catchParticles.alpha.min;
-
-            particle = this.add.rectangle(
-                spawnX,
-                spawnY,
-                gameSettings.catchParticles.size,
-                gameSettings.catchParticles.size,
-                color,
-                alpha
-            );
-            particle.setAngle(Math.random() * 360);
-
-            const lifespanRange = gameSettings.catchParticles.lifespan.max - gameSettings.catchParticles.lifespan.min;
-            const lifespan = Math.random() * lifespanRange + gameSettings.catchParticles.lifespan.min;
-
-            const finalX = spawnX + this.calcEndXPos(spawnY, effectSize);
-
-            this.activeCatchParticles.push({ particle, lifespan, finalX, effectSize });
         }
     }
 
     catchChar(catcher, charObj) {
         const idx = this.activeChars.findIndex(l => l.obj === charObj);
-        if (idx > -1) {
-            const char = this.activeChars[idx];
-            this.activeChars.splice(idx, 1);
-            char.retire(this.dyingStrips, this.fallDistance, this.fallTime);
+        if (idx === -1) return;
 
-            this.comboCounter.increment();
+        const char = this.activeChars[idx];
+        this.activeChars.splice(idx, 1);
 
-            const charDuration = char.char.endTime - char.char.startTime;
-            this.bgCharStartTime = taPlayer.timer.position;
-            this.bgCharEndTime = taPlayer.timer.position + charDuration;
+        char.spawnCatchParticles();
 
-            this.activeBGChar.setText(charObj.text);
-            this.activeBGChar.setAlpha(gameSettings.backgroundLyrics.startAlpha);
+        // Hand the character off to the disintegration path:
+        // strip retires normally, aura fades, and the text object dissolves through the mask
+        char.startDisintegration(this.dyingStrips, this.fallDistance, this.fallTime);
+        this.disintegratingChars.push(char);
 
-            this.bgCharColorIndex = (this.bgCharColorIndex + 1) % gameSettings.backgroundLyrics.colors.length;
-            const color = gameSettings.backgroundLyrics.colors[Math.floor(Math.random() * gameSettings.backgroundLyrics.colors.length)];
-            this.activeBGChar.setColor(color);
-            this.activeBGChar.setFontSize(gameSettings.backgroundLyrics.fontSize);
+        this.comboCounter.increment();
 
-            if (charDuration < gameSettings.minDelayLongChar){
-                this.spawnCatchParticles();
-            }
-        }
-    }
+        const charDuration = char.char.endTime - char.char.startTime;
+        this.backgroundChar.show(charObj.text, char.color, charDuration, taPlayer.timer?.position ?? 0);
 
-    updateBGChar() {
-        if (!this.activeBGChar) {
-            return;
-        }
-
-        const animTime = gameSettings.backgroundLyrics.maxDurationBGAnim;
-        const position = taPlayer.timer.position;
-
-        if (position >= this.bgCharEndTime) {
-            if (this.activeBGChar.alpha > 0) {
-                this.activeBGChar.setAlpha(this.activeBGChar.alpha - gameSettings.backgroundLyrics.fadeOutSpeed / 100);
-            }
-            else {
-                this.activeBGChar.setText(null);
-            }
-        }
-        else if (position <= this.bgCharStartTime + animTime) {
-            const currentSize = parseInt(this.activeBGChar.style.fontSize);
-            this.activeBGChar.setFontSize(`${currentSize + gameSettings.backgroundLyrics.sizeChangeCoeff}px`);
-        }
-    }
-
-    updateCatchParticles(){
-        for (let i = this.activeCatchParticles.length - 1; i >= 0; i--) {
-            const item = this.activeCatchParticles[i];
-            const particle = item.particle;
-            const lifespan = item.lifespan;
-            const finalX = item.finalX;
-            const effectSize = item.effectSize;
-
-            if (lifespan <= 0){
-                particle.destroy();
-                this.activeCatchParticles.splice(i, 1);
-            }
-            else{
-                this.activeCatchParticles[i].lifespan -= 1;
-
-                const speed = this.calcPartSpeed(finalX - particle.x, effectSize);
-                particle.x += speed;
-            }
-        }
+        this.catcher.playKnockAnim();
     }
 
     loadLyrics(firstChar) {
@@ -1439,16 +2223,109 @@ class GameScene extends Phaser.Scene {
         let char = firstChar;
         while (char) {
             if (char.text.trim().length > 0) this.pendingChars.push(char);
-
             char = char.next;
         }
         this.pendingChars.sort((a, b) => a.startTime - b.startTime);
+    }
+
+
+}
+
+class EndScene extends Phaser.Scene {
+    constructor() { super("EndScene"); }
+
+    create() {
+        const w = this.scale.width;
+        const h = this.scale.height;
+
+        // Solid black background
+        this.add.rectangle(w / 2, h / 2, w, h, 0x000000);
+
+        // Twinkling star field
+        this._buildStars(gameSettings.endScreen.starCount, w, h);
+
+        // Credits panel (left half)
+        this._buildCredits(w, h);
+
+        // Fade in from black
+        const overlay = this.add.rectangle(w / 2, h / 2, w, h, 0x000000)
+            .setAlpha(1).setDepth(99999);
+        this.tweens.add({
+            targets: overlay,
+            alpha: 0,
+            duration: gameSettings.endScreen.fadeInDurationMs,
+            ease: 'Quad.easeOut',
+            onComplete: () => overlay.destroy(),
+        });
+    }
+
+    _buildStars(count, w, h) {
+        this.starData = [];
+        for (let i = 0; i < count; i++) {
+            this.starData.push({
+                x: Math.random() * w,
+                y: Math.random() * h,
+                r: 1 + Math.random() * 2,
+                phase: Math.random() * Math.PI * 2,
+                speed: 0.0008 + Math.random() * 0.0015,
+            });
+        }
+        this.starGraphics = this.add.graphics();
+    }
+
+    _buildCredits(w, h) {
+        const cx = w / 2;
+
+        this.add.text(cx, h * 0.12, 'Credits', {
+            fontFamily: gameSettings.fonts.main,
+            fontSize: "52px",
+            color: gameSettings.colors.textLight,
+            fontStyle: "bold",
+            stroke: "#000000",
+            strokeThickness: 6,
+        }).setOrigin(0.5);
+
+        const lines = [
+            'アニメーション / Animations',
+            '─────────────────',
+            'LeLad (intro animation)',
+            'Galaxy77 (pixel art)',
+            'プログラム / Programming',
+            '─────────────────',
+            'PouchyCorp',
+            'Alixz',
+            'Spacy',
+            '─────────────────',
+            'Thank you for playing !',
+        ];
+
+        this.add.text(cx, h * 0.25, lines.join('\n'), {
+            fontFamily: gameSettings.fonts.main,
+            fontSize: "20px",
+            color: "#BBBBBB",
+            align: "center",
+            lineSpacing: 8,
+            stroke: "#000000",
+            strokeThickness: 3,
+        }).setOrigin(0.5, 0);
+    }
+
+    update(time) {
+        if (!lowPowerMode && this.starGraphics && this.starData) {
+            this.starGraphics.clear();
+            for (const s of this.starData) {
+                const alpha = 0.15 + 0.75 * (0.5 + 0.5 * Math.sin(s.phase + time * s.speed));
+                this.starGraphics.fillStyle(0xffffff, alpha);
+                this.starGraphics.fillCircle(s.x, s.y, s.r);
+            }
+        }
     }
 }
 
 document.body.style.backgroundColor = gameSettings.colors.background;
 document.body.style.margin = "0";
 document.body.style.overflow = "hidden";
+introVideoElement = createIntroVideoElement();
 
 const config = {
     type: Phaser.AUTO,
@@ -1457,23 +2334,15 @@ const config = {
     height: window.innerHeight,
     transparent: true,
     physics: { default: "arcade" },
-    scene: [LoadScene, TitleScene, GameScene],
+    scene: [BootScene, TitleScene, GameScene],
     scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH }
 };
 
 const game = new Phaser.Game(config);
 
-const taPlayer = new Player({ 
-    app: { token: gameSettings.api.token }, 
-    mediaElement: document.querySelector("#media") ,
-    valenceArousalEnabled: true
-});
-taPlayer.addListener({ 
+const taPlayer = new Player({ app: { token: gameSettings.api.token }, mediaElement: document.querySelector("#media"), valenceArousalEnabled: true, vocalAmplitudeEnabled: true });
+
+taPlayer.addListener({
     onTimerReady() { isTextAliveReady = true; },
-    onPlay() { 
-        if (game.scene.isActive("GameScene")) {
-            game.scene.getScene("GameScene").visualizer?.tryConnect();
-        }
-    }
 });
 taPlayer.createFromSongUrl(gameSettings.api.songUrl);
