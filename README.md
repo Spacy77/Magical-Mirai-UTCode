@@ -46,10 +46,10 @@ We are sadly powerless against this issue. If you encounter it, please switch so
 
 ## Credits
 This submission is by UTCode, a computer science association of the Université Technologique de Compiègne (French university) 
-LeLad (intro animation) 
-Galaxy77 (pixel art) 
-PouchyCorp (programming) 
-Alixz (programming) 
-Spacy (programming) 
+- LeLad (intro animation) 
+- Galaxy77 (pixel art) 
+- PouchyCorp (programming) 
+- Alixz (programming) 
+- Spacy (programming) 
 
 Contact : pichou.l.acarien@gmail.com
